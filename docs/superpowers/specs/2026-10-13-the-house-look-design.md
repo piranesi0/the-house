@@ -44,11 +44,14 @@ Each loaded hall is drawn in three layers, all built from the hall's existing pr
    into **one effects mesh per hall**. Effects take the same distance and height fog as the
    surfaces, so a lit window 30 m away fades like the wall it sits on.
 
-- **New primitive kind `poly`:** a flat filled polygon with optional holes,
-  `{ kind: 'poly', points: [[x, y, z], ...], holes: [[[x, y, z], ...]] }`, all points at one
-  height. Triangulated with `THREE.ShapeUtils.triangulateShape`, which handles concave outlines
-  and holes. It is not a line primitive: it draws no edges of its own, so existing outlines stay
-  where they are. `lines` and `segs` primitives stay lines only.
+- **New primitive kind `poly`:** a planar filled polygon, `{ kind: 'poly', points: [[x, y, z],
+  ...], down }`, simple (convex or concave, no holes), triangulated in the xz projection by pure
+  ear clipping in `shapes/poly.js`. Pure modules never import three (v0 rule), so the triangles
+  are computed in plain JS and tested in Node; the browser only uploads them. `down` winds the
+  face to point `-y` (ceilings). A floor with a hole in it is several polys: the footprint clipped
+  by axis-aligned half-planes around the hole (four pieces for the stairwell). It is not a line
+  primitive: it draws no edges of its own, so existing outlines stay where they are. `lines` and
+  `segs` primitives stay lines only.
 - **Floors and ceilings become `poly`.** Today rect and colonnade floors are 0.02 m `box` slabs
   (`slab()` in `shapes/common.js`), while octagon and cross floors are `lines` outlines, and the
   stair hall and the hall above it only draw a `lines` rectangle around the well on top of a solid
@@ -207,9 +210,9 @@ of shafts are the first things to cut.
 
 - `moodFor`: ranges, monotonic directions (darker means less ambient; wetter means more mist),
   continuity (a small change in the fields gives a small change in mood), determinism.
-- `poly` triangulation: octagon, cross (concave) and a rect with the well as a hole; the triangles
-  cover the outline's area exactly (area sum matches) and no triangle centroid falls inside the
-  hole.
+- `poly` triangulation: octagon, cross (concave) and the four floor pieces around a well; the
+  triangles cover the outline's area exactly (area sum matches) and no triangle covers a point
+  inside the well.
 - Floors: for one thousand random cells, the stair hall and the hall above it have a well-sized
   hole in their floor; every doorway has a threshold `poly` spanning the wall thickness; ramps
   have surfaces.
