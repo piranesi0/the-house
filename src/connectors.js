@@ -2,10 +2,10 @@ import { stream } from './rng.js';
 import { hallParams } from './hall.js';
 
 export const TYPES = {
-  arch:      { width: 4,   height: 6, raise: 0,   room: 0 },
-  door:      { width: 1.6, height: 3, raise: 0,   room: 0 },
-  vestibule: { width: 1.6, height: 3, raise: 0,   room: 6 },
-  steps:     { width: 4,   height: 6, raise: 0.4, room: 0 },
+  arch:      { width: 4,   height: 12, raise: 0,   room: 0 },
+  door:      { width: 1.6, height: 6, raise: 0,   room: 0 },
+  vestibule: { width: 1.6, height: 6, raise: 0,   room: 6 },
+  steps:     { width: 4,   height: 12, raise: 0.4, room: 0 },
 };
 
 export function connectorParams(seedHash, hallA, hallB) {

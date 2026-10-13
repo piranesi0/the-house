@@ -46,3 +46,14 @@ test('connsFor gives one connector per side with matching axes', () => {
   assert.deepEqual(c.e.a, { x: 2, z: -3 }); assert.deepEqual(c.w.b, { x: 2, z: -3 });
   assert.deepEqual(c.s.a, { x: 2, z: -3 }); assert.deepEqual(c.n.b, { x: 2, z: -3 });
 });
+
+test('every doorway, plus a 1 m lintel, fits under the ceilings of both halls it joins', () => {
+  assert.deepEqual(Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, t.height])), { arch: 12, door: 6, vestibule: 6, steps: 12 });
+  for (let i = 0; i < 1000; i++) {
+    const x = (i * 31) % 101 - 50, z = (i * 17) % 101 - 50;
+    for (const [dx, dz] of [[1, 0], [0, 1]]) {
+      const a = H(x, z), b = H(x + dx, z + dz), c = connectorParams(seed, a, b);
+      assert.ok(c.height + 1 <= Math.min(a.ceiling, b.ceiling), `${c.type} ${c.height} m under ${a.ceiling.toFixed(1)} / ${b.ceiling.toFixed(1)} m`);
+    }
+  }
+});

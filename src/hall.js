@@ -1,7 +1,7 @@
 import { stream } from './rng.js';
 
 export const CELL = 24;
-export const STOREY = 12;
+export const STOREY = 44;
 export const SHAPES = ['long', 'square', 'octagon', 'cross', 'colonnade'];
 
 // Halves round away from zero so cellOf(-w) === -cellOf(w); "+ 0" turns -0 into 0.
@@ -41,7 +41,8 @@ export function hallParams(seedHash, x, y, z, fields) {
   }
   if (shape === 'square' || shape === 'octagon') fz = fx;
   let hx = fx * CELL / 2 - wall, hz = fz * CELL / 2 - wall;
-  let ceiling = rng.range(6, 14);
+  // One draw in the same place as before, so every later draw in this stream is unchanged.
+  let ceiling = shape === 'long' ? rng.range(18, 26) : rng.range(18, 40);
   const pStair = (water > 0.6 || light > 0.7) ? 0.16 : 0.08;
   const isStair = rng.chance(pStair);
   // A stairwell needs a big hall around it: room to walk beside it, and for statues.

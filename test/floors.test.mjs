@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fnv1a } from '../src/rng.js';
 import { makeFields } from '../src/fields.js';
-import { hallParams } from '../src/hall.js';
+import { hallParams, STOREY } from '../src/hall.js';
 import { connsFor } from '../src/connectors.js';
 import { buildHall } from '../src/shapes/index.js';
 import { footprint } from '../src/shapes/footprint.js';
@@ -42,10 +42,10 @@ test('every hall floor is filled to its footprint, and only a stair hall has a h
     const { cx, cz } = hall;
     assert.ok(!covers(pos, cx, cz) && !covers(pos, cx + WELL.hx - 0.1, cz + WELL.hz - 0.1), 'well sealed');
     assert.ok(covers(pos, cx + WELL.hx + 0.5, cz) && covers(pos, cx, cz - WELL.hz - 0.5), 'floor beside the well missing');
-    const above = buildHall({ ...hall, y: 1, floorY: 12 }, conns, { vista: true, ceiling: false, floorHole: true });
+    const above = buildHall({ ...hall, y: 1, floorY: STOREY }, conns, { vista: true, ceiling: false, floorHole: true });
     const abovePos = above.prims.filter(p => p.kind === 'poly' && p.name === 'floor').flatMap(f => polyPositions(f));
     assert.ok(!covers(abovePos, cx, cz) && covers(abovePos, cx + WELL.hx + 0.5, cz), 'hall above has no hole');
-    const below = buildHall({ ...hall, y: -1, floorY: -12 }, conns, { vista: true, ceiling: false });
+    const below = buildHall({ ...hall, y: -1, floorY: -STOREY }, conns, { vista: true, ceiling: false });
     assert.equal(below.prims.filter(p => p.kind === 'poly' && p.name === 'ceiling').length, 0);
     assert.ok(covers(below.prims.filter(p => p.kind === 'poly' && p.name === 'floor').flatMap(f => polyPositions(f)), cx, cz), 'hall below lost its floor');
   }

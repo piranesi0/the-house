@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fnv1a } from '../src/rng.js';
 import { makeFields } from '../src/fields.js';
-import { hallParams } from '../src/hall.js';
+import { hallParams, STOREY } from '../src/hall.js';
 import { connsFor } from '../src/connectors.js';
 import { buildHall } from '../src/shapes/index.js';
 import { WELL } from '../src/shapes/stairwell.js';
@@ -29,7 +29,7 @@ test('a stair hall has ramps to both landings, rails at every edge, and no slot 
     assert.ok(inside(b.boxes, cx + hx + 0.25, 1, cz - 3) && inside(b.boxes, cx - hx - 0.25, -2, cz - 3), 'shaft walls');
     assert.ok(!inside(b.boxes, cx + hx + 0.25, 1, cz) && !inside(b.boxes, cx - hx - 0.25, 1, cz), 'no way into the well from the side');
     for (const s of b.slots) assert.ok(Math.abs(s.x - cx) > hx + 1 || Math.abs(s.z - cz) > hz + 1, 'slot in the well');
-    const vista = buildHall({ ...hall, y: -1, floorY: -12 }, conns, { vista: true, ceiling: false });
+    const vista = buildHall({ ...hall, y: -1, floorY: -STOREY }, conns, { vista: true, ceiling: false });
     assert.equal(vista.floors.length, 0);
   }
   assert.ok(checked >= 10);
@@ -63,7 +63,7 @@ test('nothing from the storey below pokes through a stair hall floor, nor a stai
     const hall = hallParams(seed, x, 0, z, fields);
     if (!hall.isStair) continue;
     checked++;
-    assert.ok(hall.ceiling <= 11, `stair hall ceiling ${hall.ceiling}`);
+    assert.ok(hall.ceiling <= STOREY - 1, `stair hall ceiling ${hall.ceiling}`);
     const below = hallParams(seed, x, -1, z, fields);
     const vista = buildHall(below, connsFor(seed, below, fields), { vista: true, ceiling: false });
     const top = Math.max(...vista.boxes.map(b => b.max[1]));
