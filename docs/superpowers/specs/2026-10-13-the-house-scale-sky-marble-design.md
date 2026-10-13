@@ -3,7 +3,7 @@
 **Status:** design approved in conversation 2026-10-13, section by section (scale, sky, marble).
 Ready for planning.
 **Owner:** Alex, building in Claude Code sessions. No Aleph agents.
-**Amends:** `2026-10-13-the-house-look-design.md` §3 (key light elevation), §4 (fog distances), §5
+**Amends:** `2026-10-13-the-house-look-design.md` §3 (key light elevation; haze measured with a flattened distance), §5
 (window height), §6 (sky), §7 (draw calls per hall), §9 (rollout); and the v0 spec's hall
 dimensions (`STOREY`, ceiling range, doorway heights). Everything else in both specs stands.
 
@@ -72,8 +72,16 @@ halls are still built, queued as today.
 - The nominal key-light elevation range becomes 50 to 75 degrees below horizontal (was 40 to 60),
   still clamped so every shaft lands inside the hall and off the well. A 35 m-high window over a
   22 m hall then lands its shaft without being forced to vertical.
-- Fog far by light: 18 m (chiaroscuro, unchanged: the vault vanishes into the dark), about 40 m at
-  dusk (was 31), 70 m luminous (was 44). The `moodFor` tests' fog range becomes `18..70`.
+- Fog far by light is unchanged: 18 m (chiaroscuro), about 31 m at dusk, 44 m luminous, so no hall
+  beyond the loaded ring (48 m at worst) ever shows at the horizon. `moodFor` is unchanged.
+- What changes is how the surface, effects and window-portal shaders measure fog distance: the
+  horizontal distance plus one third of the vertical, `d = length(off.xz) + abs(off.y) / 3`, where
+  `off` is the camera-to-fragment offset in world orientation (the view-space offset turned back by
+  the view rotation only, so no world-scale position is formed). A 40 m vault overhead then fogs
+  like something 13 m away and stays visible; the horizon fogs exactly as before. Height fog is
+  unchanged.
+- Lines and the water grid keep three's built-in distance fog (true distance), so high line work
+  fades a little sooner than the stone it draws.
 - The camera's far plane stays at 200 m.
 
 **Determinism:** same seed, same House. Old links open at the same cell, but the hall there is
@@ -114,8 +122,9 @@ ceiling lines.
 
 ## 4. Marble
 
-**Marbles by district** (`src/marble.js`, pure): the `theme` field picks one of six marbles per
-district:
+**Marbles by district** (`src/marble.js`, pure): the `theme` field, sampled at one-third resolution
+(`fields.theme(hall.x / 3, hall.z / 3)`), picks one of six marbles per district, so a district spans
+several halls rather than the two or three the field's own grain would give:
 
 | marble | base | veins |
 |---|---|---|
@@ -149,9 +158,10 @@ pattern in two or three colours from the district's marble, chosen per hall by `
 Pattern edges are antialiased with screen-space derivatives (`fwidth`), so they do not shimmer at a
 distance. Veins run across the inlay as well.
 
-**Pure interface:** `marbleFor(seedHash, hall) -> { marble, pattern }` where `marble` is one of the
+**Pure interface:** `marbleFor(seedHash, hall, fields) -> { marble, pattern }` where `marble` is one of the
 six table entries (by name) and `pattern` is `'chequer' | 'medallion' | 'bands'`. It is a function
-of `hall.theme` (marble) and a draw from a new stream with salt `marble` (pattern).
+of the theme field at one-third resolution (marble) and a draw from a new stream with salt `marble`
+(pattern).
 
 ## 5. What changes where
 
@@ -163,7 +173,7 @@ of `hall.theme` (marble) and a draw from a new stream with salt `marble` (patter
 | `src/windows.js` | window height, elevation range; roofless halls return no windows and an overhead key |
 | `src/roof.js` (new, pure) | `isRoofless`, overhead key direction |
 | `src/shapes/*` | roofless halls omit ceiling poly and outline, add a top edge line |
-| `src/mood.js` | fog-far stops 18 / 40 / 70 |
+| `src/material.js`, `src/effects.js` | fog distance: horizontal plus one third of vertical |
 | `src/marble.js` (new, pure) | marble table, `marbleFor` |
 | `src/material.js` | veins, floor patterns, marble uniforms, `floor` kind; sky portal material |
 | `src/skydome.js` (new) | the dome and its shader function, shared with the portals |
@@ -196,10 +206,11 @@ Unchanged limits: 60 fps, at most 100 draw calls in view, about 600,000 triangle
   roofless hall has no ceiling polys and no windows; its key elevation is 70 to 80 degrees.
 - Windows: heights about 30% of the ceiling, tops within 1.5 m of it, elevation range 50 to 75
   before clamping, and every phase B window test still green at the new dimensions.
-- Mood: fog far within `18..70`; the stops are hit exactly.
+- Mood: unchanged; fog far stays within `18..44`. The flattened fog distance is shader-only and is
+  checked on the walk (a 40 m vault visible overhead, no pop-in at the horizon).
 - Marble: `marbleFor` is deterministic; all six marbles and all three patterns are reachable over
-  many halls; the marble is constant within a district (neighbouring cells with near-equal `theme`
-  pick the same marble).
+  many halls; the marble is constant within a district (neighbouring cells change marble only across
+  a cut of the one-third-resolution theme, and far less often than at full resolution).
 - Every existing test stays green, with constants that encode the old dimensions updated, not
   deleted.
 
@@ -213,7 +224,7 @@ dimensions.
 
 | phase | builds |
 |---|---|
-| S1 | scale: ceilings, storeys, doorways, colossi, window height and elevation, fog distances |
+| S1 | scale: ceilings, storeys, doorways, colossi, window height and elevation, fog distance measure |
 | S2 | sky: dome, window portals, roofless halls |
 | S3 | marble: marble table, veins, Venetian floors |
 
