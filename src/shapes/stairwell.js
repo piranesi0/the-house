@@ -1,5 +1,6 @@
 import { box, lines, segs, poly, aabbOfBox } from './ir.js';
 import { floorPatch } from './common.js';
+import { STOREY } from '../hall.js';
 
 export const WELL = { hx: 3, hz: 5, drop: 4, ramp: 4, wallT: 0.5 };
 
@@ -16,8 +17,16 @@ export function buildStairwell(hall) {
   );
   // Shaft walls either side, open for 1.5 m at the middle, where both ramps meet the floor: the way in.
   const gap = 0.75, segLen = hz + wallT / 2 - gap;
+  // They rise from the lower landing to the floor above, as they did when a storey was 12 m.
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    solid([wallT, 12 + drop, segLen], [cx + sx * (hx + wallT / 2), f - drop + (12 + drop) / 2, cz + sz * (gap + segLen / 2)]);
+    solid([wallT, STOREY + drop, segLen], [cx + sx * (hx + wallT / 2), f - drop + (STOREY + drop) / 2, cz + sz * (gap + segLen / 2)]);
+  }
+  // Above the ceiling the well is a closed shaft up to the floor above: the gaps in the side walls
+  // and both open ends are lined there. Out of reach, so drawn but not collided with.
+  const top = f + hall.ceiling, lh = STOREY - hall.ceiling;
+  if (lh > 0.01) {
+    for (const sx of [-1, 1]) prims.push(box([wallT, lh, 2 * gap], [cx + sx * (hx + wallT / 2), top + lh / 2, cz], [0, 0, 0], 'lining'));
+    for (const sz of [-1, 1]) prims.push(box([2 * hx + 2 * wallT, lh, wallT], [cx, top + lh / 2, cz + sz * (hz + wallT / 2)], [0, 0, 0], 'lining'));
   }
   for (const [sz, ys] of [[-1, [f, f - drop]], [1, [f, f + drop]]]) {
     for (const y of ys) solid([2 * hx + 2 * wallT, 1, 0.3], [cx, y + 0.5, cz + sz * (hz + 0.15)]);

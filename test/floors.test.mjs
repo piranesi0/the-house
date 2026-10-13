@@ -70,7 +70,7 @@ test('every doorway has a threshold floor through the wall thickness', () => {
 });
 
 test('stair ramps and steps connectors have sloped floor surfaces', () => {
-  const hall = { cx: 0, cz: 0, floorY: 0 };
+  const hall = { cx: 0, cz: 0, floorY: 0, ceiling: 18 };
   const ramps = buildStairwell(hall).prims.filter(p => p.kind === 'poly' && p.name === 'ramp');
   assert.equal(ramps.length, 2);
   const ys = ramps.flatMap(p => p.points.map(q => q[1])).sort((a, b) => a - b);

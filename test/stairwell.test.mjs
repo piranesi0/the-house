@@ -84,3 +84,26 @@ test('stair halls and the halls above them are dry, so nobody wades on the stair
   }
   assert.ok(checked >= 20);
 });
+
+test('above the ceiling of a stair hall the well is a closed shaft up to the floor above', () => {
+  let checked = 0;
+  for (let i = 0; i < 3000 && checked < 20; i++) {
+    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
+    const hall = hallParams(seed, x, 0, z, fields);
+    if (!hall.isStair) continue;
+    checked++;
+    const b = buildHall(hall, connsFor(seed, hall, fields));
+    const { cx, cz } = hall, { hx, hz, wallT } = WELL;
+    const lining = b.prims.filter(p => p.name === 'lining');
+    assert.equal(lining.length, 4);
+    const solidAt = (px, py, pz) => [...lining, ...b.prims.filter(p => p.kind === 'box')].some(p => Math.abs(px - p.pos[0]) < p.size[0] / 2 && Math.abs(py - p.pos[1]) < p.size[1] / 2 && Math.abs(pz - p.pos[2]) < p.size[2] / 2);
+    for (const y of [hall.ceiling + 0.5, (hall.ceiling + STOREY) / 2, STOREY - 0.5]) {
+      for (const [px, pz] of [[cx + hx + wallT / 2, cz], [cx - hx - wallT / 2, cz], [cx, cz + hz + wallT / 2], [cx, cz - hz - wallT / 2], [cx + hx + wallT / 2, cz + 3], [cx - hx - wallT / 2, cz - 3]]) {
+        assert.ok(solidAt(px, y, pz), `${hall.shape} shaft open at (${px - cx}, ${y.toFixed(1)}, ${pz - cz})`);
+      }
+    }
+    for (const p of lining) assert.ok(p.pos[1] - p.size[1] / 2 >= hall.ceiling - 1e-9 && p.pos[1] + p.size[1] / 2 <= STOREY + 1e-9);
+    assert.ok(!b.boxes.some(q => q.min[1] >= hall.ceiling - 1e-9), 'lining collides');
+  }
+  assert.ok(checked >= 10);
+});
