@@ -14,7 +14,7 @@ export function buildRect(hall, conns, opts = {}) {
   const slots = nicheSlotsForPolygon(verts, openings);
   if (hall.shape === 'square') slots.push({ x: hall.cx, z: hall.cz, facing: 0, maxScale: 3, kind: 'centre' });
   // Small halls with wide doorways leave no room for wall niches; fall back to the corners.
-  if (slots.length < 2) {
+  if (slots.filter(s => s.kind === 'niche').length < 2) {
     const { cx, cz, hx, hz } = hall;
     for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
       const x = cx + dx * (hx - 1.5), z = cz + dz * (hz - 1.5);

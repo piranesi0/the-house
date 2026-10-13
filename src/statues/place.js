@@ -2,9 +2,17 @@ import { stream } from '../rng.js';
 import { box, cyl, boundsOf, translatePrims, translateBoxes, rotateYPrims, rotateYBoxes } from '../shapes/ir.js';
 import { figure } from './figure.js';
 import { rollDamage, applyDamage } from './damage.js';
+import { animal } from './animal.js';
+import { object } from './object.js';
+import { group } from './group.js';
 
-export const FAMILIES = { figure: ['standing', 'seated', 'kneeling', 'reaching', 'carrying', 'reading'] };
-export const FAMILY_BUILDERS = { figure: (subject, scale) => figure(subject, scale) };
+export const FAMILIES = {
+  figure: ['standing', 'seated', 'kneeling', 'reaching', 'carrying', 'reading'],
+  animal: ['horse', 'ox', 'fox', 'hare', 'bear', 'heron', 'owl', 'dog'],
+  object: ['urn', 'boat', 'ladder', 'bell', 'wheel', 'loom'],
+  group:  ['pair', 'companion', 'child'],
+};
+export const FAMILY_BUILDERS = { figure, animal, object, group };
 const PEAKS = { figure: 0.2, animal: 0.45, object: 0.7, group: 0.9 };
 
 export function pickFamily(theme, rng, slotKind) {
@@ -67,8 +75,7 @@ export function placeStatues(seedHash, hall, slots) {
   const order = [...slots];
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   const used = new Set(), out = [];
-  for (const slot of order) {
-    if (out.length >= count) break;
+  const attempt = (slot) => {
     let inst = null;
     for (let tries = 0; tries < 20 && !inst; tries++) {
       const family = pickFamily(hall.theme, rng, slot.kind);
@@ -79,8 +86,8 @@ export function placeStatues(seedHash, hall, slots) {
       used.add(key);
       inst = { family, subject, pose, plinth: rng.pick(['box', 'box', 'stepped', 'drum']) };
     }
-    if (!inst) continue;
-    const scale = Math.min(slot.maxScale, 1 + rng.next() * rng.next() * 2 * (0.5 + areaFrac));
+    if (!inst) return null;
+    let scale = Math.min(slot.maxScale, 1 + rng.next() * rng.next() * 2 * (0.5 + areaFrac));
     let damage = rollDamage(rng, hall.decay);
     const place = (side) => {
       const built = buildStatue(inst, scale, damage, side);
@@ -94,7 +101,16 @@ export function placeStatues(seedHash, hall, slots) {
     // if neither does, it stays standing.
     if (damage.fallen && blocksDoor(placed.boxes, zones)) placed = place(-1);
     if (damage.fallen && blocksDoor(placed.boxes, zones)) { damage = { ...damage, fallen: false }; placed = place(1); }
-    out.push({ slot, ...inst, scale, damage, ...placed });
+    // Big subjects (a horse, a boat) can reach a doorway even standing: try life-size, else give the subject back.
+    if (blocksDoor(placed.boxes, zones) && scale > 1) { scale = 1; placed = place(1); }
+    if (blocksDoor(placed.boxes, zones)) { used.delete(`${inst.subject}:${inst.pose}`); return null; }
+    return { slot, ...inst, scale, damage, ...placed };
+  };
+  for (const slot of order) {
+    if (out.length >= count) break;
+    let statue = null;
+    for (let tries = 0; tries < 6 && !statue; tries++) statue = attempt(slot);
+    if (statue) out.push(statue);
   }
   return out;
 }
