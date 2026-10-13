@@ -4,11 +4,13 @@ export const facingToward = (fx, fz) => Math.atan2(-fx, -fz);
 export const floorPatch = (x0, x1, z0, z1, axis, y0, y1) => ({ x0, x1, z0, z1, axis, y0, y1 });
 export const rectPoly = (cx, y, cz, hx, hz, name, down = false) =>
   poly([[cx - hx, y, cz - hz], [cx + hx, y, cz - hz], [cx + hx, y, cz + hz], [cx - hx, y, cz + hz]], name, down);
-export function octagonPoly(cx, y, cz, ap, name, down = false) {
+export function octagonVerts(cx, cz, ap) {
   const R = ap / Math.cos(Math.PI / 8), pts = [];
-  for (let k = 0; k < 8; k++) { const a = Math.PI / 8 + k * Math.PI / 4; pts.push([cx + R * Math.cos(a), y, cz + R * Math.sin(a)]); }
-  return poly(pts, name, down);
+  for (let k = 0; k < 8; k++) { const a = Math.PI / 8 + k * Math.PI / 4; pts.push([cx + R * Math.cos(a), cz + R * Math.sin(a)]); }
+  return pts;
 }
+export const octagonPoly = (cx, y, cz, ap, name, down = false) =>
+  poly(octagonVerts(cx, cz, ap).map(([x, z]) => [x, y, z]), name, down);
 
 function edgeInfo(verts, i) {
   const n = verts.length, a = verts[i], b = verts[(i + 1) % n];
