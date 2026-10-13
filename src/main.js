@@ -5,6 +5,7 @@ import { cellOf, freeSpawn } from './hall.js';
 import { World } from './world.js';
 import { Water } from './water.js';
 import { Clouds } from './sky.js';
+import { Flocks } from './birds.js';
 import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
 import { readFragment, writeFragment, randomSeed } from './url.js';
@@ -21,9 +22,10 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
 const water = new Water(scene);
 const clouds = new Clouds(scene, seedHash);
+const flocks = new Flocks(scene, seedHash);
 const world = new World(scene, seedHash, fields, {
-  onAdd: (c) => { water.add(c); clouds.add(c); },
-  onRemove: (c) => { water.remove(c); clouds.remove(c); },
+  onAdd: (c) => { water.add(c); clouds.add(c); flocks.add(c); },
+  onRemove: (c) => { water.remove(c); clouds.remove(c); flocks.remove(c); },
 });
 const player = new Player(camera, renderer.domElement);
 const hint = document.getElementById('hint');
@@ -61,5 +63,6 @@ renderer.setAnimationLoop((t) => {
   easeLight(dt, cx, cz);
   water.update(t / 1000);
   clouds.update(dt);
+  flocks.update(t / 1000, dt);
   renderer.render(scene, camera);
 });
