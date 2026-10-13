@@ -47,8 +47,11 @@ export function hallParams(seedHash, x, y, z, fields) {
   // A stairwell needs a big hall around it: room to walk beside it, and for statues.
   // and a ceiling that stays below the storey above, which it looks into.
   if (isStair) { hx = Math.max(fx, 0.9) * CELL / 2 - wall; hz = Math.max(fz, 0.9) * CELL / 2 - wall; ceiling = Math.min(ceiling, STOREY - 1); }
-  const depth = depthFor(water);
-  const pool = depth > 0 ? poolOutline(rng, hx, hz) : null;
+  let depth = depthFor(water);
+  let pool = depth > 0 ? poolOutline(rng, hx, hz) : null;
+  // Water lies in the lower halls: a stair hall and the hall above it stay dry, so the stairs
+  // and the floor hole are never under a pool. Drawn after the outline, so the stream is unchanged.
+  if (isStair || y > 0) { depth = 0; pool = null; }
   const hasBirds = rng.chance(0.15 * light * (1 - water));
   return {
     x, y, z, shape, hx, hz, wall, ceiling, water, light, decay, theme, depth, pool,

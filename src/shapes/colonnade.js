@@ -15,5 +15,7 @@ export function buildColonnade(hall, conns, opts = {}) {
   }
   const slots = base.slots.filter(s => s.kind !== 'centre');
   for (let z = cz - hz + 6; z <= cz + hz - 6 + 1e-6; z += 8) slots.push({ x: cx, z, facing: 0, maxScale: 1.8, kind: 'row' });
+  // A short colonnade has no room for a row; it still gets one statue between the columns.
+  if (!slots.some(s => s.kind === 'row')) slots.push({ x: cx, z: cz, facing: 0, maxScale: 1.8, kind: 'row' });
   return { prims, boxes, floors: [], slots };
 }

@@ -17,4 +17,5 @@ export function colorsFor(light) {
   return { line: lerpHex(a.line, b.line, t), ground: lerpHex(a.ground, b.ground, t) };
 }
 
-export function fogFar(light) { return 18 + (55 - 18) * clamp01(light); }
+// 44 m: fully fogged before the nearest unloaded hall, 48 m away at worst.
+export function fogFar(light) { return 18 + (44 - 18) * clamp01(light); }

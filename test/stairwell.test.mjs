@@ -70,3 +70,17 @@ test('nothing from the storey below pokes through a stair hall floor, nor a stai
     assert.ok(top <= -1 + 1e-9, `hall below reaches y = ${top}`);
   }
 });
+
+test('stair halls and the halls above them are dry, so nobody wades on the stairs', () => {
+  let checked = 0;
+  for (let i = 0; i < 6000 && checked < 80; i++) {
+    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
+    const hall = hallParams(seed, x, 0, z, fields);
+    if (!hall.isStair || fields.water(x, z) < 0.35) continue;
+    checked++;
+    assert.equal(hall.depth, 0); assert.equal(hall.pool, null);
+    const above = hallParams(seed, x, 1, z, fields);
+    assert.equal(above.depth, 0); assert.equal(above.pool, null);
+  }
+  assert.ok(checked >= 20);
+});

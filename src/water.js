@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { pointInPolygon } from './hall.js';
 import { colorsFor, lerpHex } from './palette.js';
 import { buildGroup, disposeGroup } from './build.js';
+import { translatePrims } from './shapes/ir.js';
 
 export class Water {
   constructor(scene, renderer) { this.scene = scene; this.pools = new Map(); renderer.localClippingEnabled = true; }
@@ -29,12 +30,12 @@ export class Water {
     const waterY = hall.floorY + hall.depth;
     const wet = (cell.statues || []).filter(s => pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
     const prims = wet.flatMap(s => s.prims);
-    const mirror = buildGroup(prims, color, 0);
+    const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), color, 0);
     mirror.scale.y = -1;
-    mirror.position.y = 2 * waterY;
+    mirror.position.set(hall.cx, 2 * waterY, hall.cz);
     mirror.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = 0.4; o.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), waterY)]; } });
     this.scene.add(mirror);
-    this.pools.set(cell, { mesh, base, mirror });
+    this.pools.set(cell, { mesh, base, mirror, cx: hall.cx, cz: hall.cz });
   }
 
   remove(cell) {
@@ -46,8 +47,8 @@ export class Water {
   }
 
   update(t) {
-    for (const { mesh, base, mirror } of this.pools.values()) {
-      mirror.position.x = 0.05 * Math.sin(0.7 * t); mirror.position.z = 0.05 * Math.cos(0.5 * t);
+    for (const { mesh, base, mirror, cx, cz } of this.pools.values()) {
+      mirror.position.x = cx + 0.05 * Math.sin(0.7 * t); mirror.position.z = cz + 0.05 * Math.cos(0.5 * t);
       const a = mesh.geometry.attributes.position;
       for (let i = 0; i < base.length; i++) {
         const [x, z] = base[i];

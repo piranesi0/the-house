@@ -3,6 +3,7 @@ import { connsFor } from './connectors.js';
 import { buildHall } from './shapes/index.js';
 import { buildConnector } from './shapes/connector.js';
 import { placeStatues } from './statues/place.js';
+import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { colorsFor } from './palette.js';
 
@@ -31,12 +32,15 @@ export class World {
     const conns = connsFor(this.seedHash, hall, this.fields);
     const built = buildHall(hall, conns, opts);
     const prims = [...built.prims], boxes = [...built.boxes], floors = [...built.floors];
-    const statues = placeStatues(this.seedHash, hall, built.slots);
+    const statues = placeStatues(this.seedHash, hall, built.slots, built.boxes);
     for (const s of statues) { prims.push(...s.prims); boxes.push(...s.boxes); }
     if (y === 0) for (const c of [conns.e, conns.s]) {
       const b = buildConnector(c); prims.push(...b.prims); boxes.push(...b.boxes); floors.push(...b.floors);
     }
-    const group = buildGroup(prims, colorsFor(hall.light).line);
+    // Geometry is built around the hall's own centre and placed by the group, so float32 vertex
+    // buffers stay precise however far from the origin the hall is.
+    const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), colorsFor(hall.light).line);
+    group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues };
     this.cells.set(k, cell);

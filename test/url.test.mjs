@@ -22,3 +22,8 @@ test('random seeds are two words from the list', () => {
   for (const w of s) assert.ok(WORDS.includes(w));
   assert.ok(WORDS.length >= 30);
 });
+
+test('absurd coordinates are clamped to a million halls either way', () => {
+  assert.deepEqual(readFragment('#s=a&x=1e20&z=-1e20'), { seed: 'a', x: 1000000, z: -1000000 });
+  assert.deepEqual(readFragment('#s=a&x=-7&z=100000'), { seed: 'a', x: -7, z: 100000 });
+});

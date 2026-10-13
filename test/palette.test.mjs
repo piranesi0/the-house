@@ -11,6 +11,6 @@ test('palette hits the three stops and interpolates between them', () => {
   assert.equal(lerpHex(0x000000, 0xffffff, 0.5), 0x808080);
 });
 
-test('fog runs from 18 m in the dark to 55 m in the bright', () => {
-  assert.equal(fogFar(0), 18); assert.equal(fogFar(1), 55); assert.ok(fogFar(0.5) > 18 && fogFar(0.5) < 55);
+test('fog runs from 18 m in the dark to 44 m in the bright, inside the 48 m load boundary', () => {
+  assert.equal(fogFar(0), 18); assert.equal(fogFar(1), 44); assert.ok(fogFar(0.5) > 18 && fogFar(0.5) < 44);
 });

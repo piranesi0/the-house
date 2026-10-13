@@ -54,3 +54,25 @@ test('the spawn point is never inside a statue', async () => {
   }
   assert.ok(moved > 0 && moved < 300);
 });
+
+test('statues stay inside the hall, off its walls, columns and well, and off each other', () => {
+  const ov = (a, b) => a.min[0] < b.max[0] - 1e-6 && a.max[0] > b.min[0] + 1e-6 && a.min[2] < b.max[2] - 1e-6 && a.max[2] > b.min[2] + 1e-6
+    && a.min[1] < b.max[1] && a.max[1] > b.min[1];
+  for (const name of ['ravens', 'kelp-salt']) {
+    const s = fnv1a(name), f = makeFields(s);
+    for (let i = 0; i < 400; i++) {
+      const x = (i * 31) % 101 - 50, z = (i * 17) % 101 - 50;
+      const hall = hallParams(s, x, 0, z, f), built = buildHall(hall, connsFor(s, hall, f));
+      const statues = placeStatues(s, hall, built.slots, built.boxes);
+      assert.ok(statues.length >= 2, `${hall.shape} at ${x},${z} has ${statues.length} statues`);
+      const { cx, cz, hx, hz } = hall;
+      statues.forEach((st, k) => {
+        for (const b of st.boxes) {
+          assert.ok(b.min[0] >= cx - hx - 1e-6 && b.max[0] <= cx + hx + 1e-6 && b.min[2] >= cz - hz - 1e-6 && b.max[2] <= cz + hz + 1e-6, `${st.subject} pokes out of a ${hall.shape} hall`);
+          assert.ok(!built.boxes.some(w => ov(b, w)), `${st.subject} is inside a wall, column or well of a ${hall.shape} hall`);
+          for (const other of statues.slice(k + 1)) assert.ok(!other.boxes.some(o => ov(b, o)), `${st.subject} overlaps ${other.subject}`);
+        }
+      });
+    }
+  }
+});

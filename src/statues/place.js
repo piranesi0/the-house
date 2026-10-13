@@ -66,9 +66,16 @@ function doorZones({ cx, cz, hx, hz, wall }) {
   ];
 }
 const blocksDoor = (boxes, zones) => boxes.some(b => zones.some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0));
+const overlaps = (a, b) => a.min[0] < b.max[0] - 1e-6 && a.max[0] > b.min[0] + 1e-6 && a.min[2] < b.max[2] - 1e-6 && a.max[2] > b.min[2] + 1e-6
+  && a.min[1] < b.max[1] && a.max[1] > b.min[1];
 
-export function placeStatues(seedHash, hall, slots) {
+// solids: the hall's own collision boxes (walls, columns, stairwell), which no statue may enter.
+export function placeStatues(seedHash, hall, slots, solids = []) {
   const zones = doorZones(hall);
+  const { cx, cz, hx, hz } = hall;
+  const fits = (boxes) => !blocksDoor(boxes, zones)
+    && boxes.every(b => b.min[0] >= cx - hx && b.max[0] <= cx + hx && b.min[2] >= cz - hz && b.max[2] <= cz + hz)
+    && !boxes.some(b => solids.some(w => overlaps(b, w)) || out.some(s => s.boxes.some(o => overlaps(b, o))));
   const rng = stream(seedHash, hall.x, hall.y, hall.z, 'statues');
   const areaFrac = Math.min(1, (4 * hall.hx * hall.hz) / (22.8 * 22.8));
   const count = Math.min(slots.length, Math.max(2, Math.round(2 + 12 * areaFrac)));
@@ -97,13 +104,13 @@ export function placeStatues(seedHash, hall, slots) {
       };
     };
     let placed = place(1);
-    // A fallen statue lies beside its plinth on whichever side keeps the doorways clear;
+    // A fallen statue lies beside its plinth on whichever side fits;
     // if neither does, it stays standing.
-    if (damage.fallen && blocksDoor(placed.boxes, zones)) placed = place(-1);
-    if (damage.fallen && blocksDoor(placed.boxes, zones)) { damage = { ...damage, fallen: false }; placed = place(1); }
-    // Big subjects (a horse, a boat) can reach a doorway even standing: try life-size, else give the subject back.
-    if (blocksDoor(placed.boxes, zones) && scale > 1) { scale = 1; placed = place(1); }
-    if (blocksDoor(placed.boxes, zones)) { used.delete(`${inst.subject}:${inst.pose}`); return null; }
+    if (damage.fallen && !fits(placed.boxes)) placed = place(-1);
+    if (damage.fallen && !fits(placed.boxes)) { damage = { ...damage, fallen: false }; placed = place(1); }
+    // Big subjects (a horse, a boat) can reach a doorway, a wall or a neighbour: try life-size, else give the subject back.
+    if (!fits(placed.boxes) && scale > 1) { scale = 1; placed = place(1); }
+    if (!fits(placed.boxes)) { used.delete(`${inst.subject}:${inst.pose}`); return null; }
     return { slot, ...inst, scale, damage, ...placed };
   };
   for (const slot of order) {

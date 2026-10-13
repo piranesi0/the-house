@@ -5,11 +5,14 @@ export function randomSeed(rand = Math.random) {
   return `${w()}-${w()}`;
 }
 
+const MAX_CELL = 1000000;   // far beyond any walk; keeps hashes and positions sane
+
 export function readFragment(hash) {
   const p = new URLSearchParams((hash || '').replace(/^#/, ''));
   const seed = p.get('s');
   const x = Number(p.get('x')), z = Number(p.get('z'));
-  return { seed: seed && seed.length ? seed : null, x: Number.isInteger(x) ? x : 0, z: Number.isInteger(z) ? z : 0 };
+  const coord = (v) => Number.isInteger(v) ? Math.max(-MAX_CELL, Math.min(MAX_CELL, v)) : 0;
+  return { seed: seed && seed.length ? seed : null, x: coord(x), z: coord(z) };
 }
 
 export function writeFragment({ seed, x, z }) {
