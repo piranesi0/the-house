@@ -90,5 +90,5 @@ renderer.setAnimationLoop((t) => {
   clouds.update(dt);
   flocks.update(t / 1000, dt);
   renderer.render(scene, camera);
-  debug?.update(dt, world);
+  debug?.update(world);
 });

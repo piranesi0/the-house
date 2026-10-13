@@ -15,7 +15,7 @@ export class World {
   constructor(scene, seedHash, fields, hooks = {}, look = 'shaded') {
     this.scene = scene; this.seedHash = seedHash; this.fields = fields; this.hooks = hooks; this.look = look;
     this.cells = new Map(); this.params = new Map();
-    this.queue = []; this.lastBuildMs = 0;
+    this.queue = []; this.lastBuildMs = 0; this.maxBuildMs = 0;   // max: since the last crossing
   }
   hall(x, y, z) {
     const k = key(x, y, z);
@@ -23,6 +23,7 @@ export class World {
     return this.params.get(k);
   }
   update(cx, cz) {
+    this.maxBuildMs = 0;
     const have = new Set([...this.cells.values()].filter(c => c.hall.y === 0).map(c => `${c.hall.x},${c.hall.z}`));
     const { now, later } = planLoads(have, cx, cz);
     for (const [x, z] of now) this.ensure(x, 0, z);
@@ -64,6 +65,7 @@ export class World {
     }
     this.hooks.onAdd?.(cell);
     this.lastBuildMs = performance.now() - t0;
+    this.maxBuildMs = Math.max(this.maxBuildMs, this.lastBuildMs);
     return cell;
   }
   near(cx, cz) {
