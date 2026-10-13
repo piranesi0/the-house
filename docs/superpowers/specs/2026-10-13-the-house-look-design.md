@@ -105,7 +105,7 @@ The exact colours are tuned by eye in phase A; the tests pin directions and rang
 - **Windows.** Each hall has 1 to 4 windows high on the wall its key light comes through: glowing
   rectangles on the wall surface, not holes, so geometry and collision do not change. Count,
   positions and sizes come from the hall's own stream (salt `windows`). Every window sits within its
-  wall's span and its top is near the ceiling.
+  wall's span and its top is within 1.5 m of the ceiling.
 - **Shafts.** From each window a tapered translucent volume, additive blending, depth write off,
   angled along the key light and fading toward the floor, with a soft bright patch where it lands.
   Every shaft lands inside the hall.
@@ -151,7 +151,7 @@ of shafts are the first things to cut.
   continuity (a small change in the fields gives a small change in mood), determinism.
 - `poly`: octagon, cross (concave) and the stairwell outline fill completely and never cover the
   well or a doorway gap.
-- Windows and shafts: 1 to 4 per hall, windows within their wall and near the ceiling, shafts
+- Windows and shafts: 1 to 4 per hall, windows within their wall with tops within 1.5 m of the ceiling, shafts
   landing inside the hall, chiaroscuro shafts landing on a statue, determinism.
 - URL: `look` and `debug` round-trip and default correctly.
 - Every existing test stays green.
