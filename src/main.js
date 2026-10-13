@@ -21,7 +21,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
-const water = new Water(scene);
+const water = new Water(scene, renderer);
 const clouds = new Clouds(scene, seedHash);
 const flocks = new Flocks(scene, seedHash);
 const world = new World(scene, seedHash, fields, {

@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { pointInPolygon } from './hall.js';
 import { colorsFor, lerpHex } from './palette.js';
+import { buildGroup, disposeGroup } from './build.js';
 
 export class Water {
-  constructor(scene) { this.scene = scene; this.pools = new Map(); }
+  constructor(scene, renderer) { this.scene = scene; this.pools = new Map(); renderer.localClippingEnabled = true; }
 
   add(cell) {
     const { hall } = cell;
@@ -25,18 +26,28 @@ export class Water {
     const mesh = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }));
     mesh.position.set(hall.cx, hall.floorY + hall.depth, hall.cz);
     this.scene.add(mesh);
-    this.pools.set(cell, { mesh, base });
+    const waterY = hall.floorY + hall.depth;
+    const wet = (cell.statues || []).filter(s => pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
+    const prims = wet.flatMap(s => s.prims);
+    const mirror = buildGroup(prims, color, 0);
+    mirror.scale.y = -1;
+    mirror.position.y = 2 * waterY;
+    mirror.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = 0.4; o.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), waterY)]; } });
+    this.scene.add(mirror);
+    this.pools.set(cell, { mesh, base, mirror });
   }
 
   remove(cell) {
     const p = this.pools.get(cell);
     if (!p) return;
     p.mesh.geometry.dispose(); p.mesh.material.dispose(); p.mesh.removeFromParent();
+    disposeGroup(p.mirror);
     this.pools.delete(cell);
   }
 
   update(t) {
-    for (const { mesh, base } of this.pools.values()) {
+    for (const { mesh, base, mirror } of this.pools.values()) {
+      mirror.position.x = 0.05 * Math.sin(0.7 * t); mirror.position.z = 0.05 * Math.cos(0.5 * t);
       const a = mesh.geometry.attributes.position;
       for (let i = 0; i < base.length; i++) {
         const [x, z] = base[i];
