@@ -5,8 +5,11 @@ import { cellOf, spawnPoint } from './hall.js';
 import { World } from './world.js';
 import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
+import { readFragment, writeFragment, randomSeed } from './url.js';
 
-const seedHash = fnv1a('ravens');
+const frag = readFragment(location.hash);
+const seed = frag.seed ?? randomSeed();
+const seedHash = fnv1a(seed);
 const fields = makeFields(seedHash);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -19,9 +22,11 @@ const player = new Player(camera, renderer.domElement);
 const hint = document.getElementById('hint');
 document.addEventListener('pointerlockchange', () => hint.classList.toggle('hidden', player.locked));
 
-const start = world.hall(0, 0, 0);
-world.update(0, 0);
+const start = world.hall(frag.x, 0, frag.z);
+world.update(frag.x, frag.z);
 player.place(...spawnPoint(start), 0);
+let curX = frag.x, curZ = frag.z;
+history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ }));
 let colors = colorsFor(start.light);
 scene.background = new THREE.Color(colors.ground);
 scene.fog = new THREE.Fog(colors.ground, 2, fogFar(start.light));
@@ -31,11 +36,13 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-let last = performance.now(), curX = 0, curZ = 0;
+let last = performance.now();
 renderer.setAnimationLoop((t) => {
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
   player.update(dt, world);
   const cx = cellOf(player.pos.x), cz = cellOf(player.pos.z);
-  if (cx !== curX || cz !== curZ) { curX = cx; curZ = cz; world.update(cx, cz); }
+  if (cx !== curX || cz !== curZ) { curX = cx; curZ = cz; world.update(cx, cz);
+    history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz }));
+  }
   renderer.render(scene, camera);
 });
