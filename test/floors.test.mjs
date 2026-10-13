@@ -50,3 +50,19 @@ test('every hall floor is filled to its footprint, and only a stair hall has a h
   assert.equal(shapes.size, 5);
   assert.ok(stairs >= 10);
 });
+
+test('every doorway has a threshold floor through the wall thickness', () => {
+  for (let i = 0; i < 400; i++) {
+    const x = (i * 31) % 101 - 50, z = (i * 17) % 101 - 50;
+    const hall = hallParams(seed, x, 0, z, fields), conns = connsFor(seed, hall, fields);
+    const built = buildHall(hall, conns);
+    const thresholds = built.prims.filter(p => p.kind === 'poly' && p.name === 'threshold');
+    assert.equal(thresholds.length, 4, `${hall.shape} has ${thresholds.length} thresholds`);
+    const pos = thresholds.flatMap(p => polyPositions(p));
+    const { cx, cz, hx, hz, wall: t } = hall;
+    for (const [px, pz] of [[cx, cz - hz - t / 2], [cx, cz + hz + t / 2], [cx + hx + t / 2, cz], [cx - hx - t / 2, cz]]) {
+      assert.ok(covers(pos, px, pz), `${hall.shape} doorway at ${px},${pz} has no floor`);
+    }
+    for (const p of thresholds) assert.ok(p.points.every(q => q[1] === hall.floorY));
+  }
+});

@@ -49,6 +49,11 @@ export function axisPolygonWalls(verts, h, t, f, openings = {}) {
     }
     const lh = h - o.height;
     if (lh > 0) { const l = place(e, m - o.width / 2, m + o.width / 2, f + o.height + lh / 2, lh); prims.push(box(l.size, l.pos)); }
+    // The floor through the wall thickness: the hall floor stops at the inner face and the
+    // connector floor starts at the outer face, so without this the doorway is a slot.
+    const [p0, p1] = [m - o.width / 2, m + o.width / 2];
+    const at = (s, k) => [e.a[0] + e.d[0] * s + e.n[0] * k, f, e.a[1] + e.d[1] * s + e.n[1] * k];
+    prims.push(poly([at(p0, 0), at(p1, 0), at(p1, t), at(p0, t)], 'threshold'));
   }
   return { prims, boxes };
 }
@@ -97,6 +102,9 @@ export function octagonWalls(cx, cz, ap, h, t, f, openings) {
     }
     const lh = h - o.height;
     if (lh > 0) prims.push(box(alongX ? [w, lh, t] : [t, lh, w], [px, f + o.height + lh / 2, pz]));
+    prims.push(poly(alongX
+      ? [[px - w / 2, f, pz - t / 2], [px + w / 2, f, pz - t / 2], [px + w / 2, f, pz + t / 2], [px - w / 2, f, pz + t / 2]]
+      : [[px - t / 2, f, pz - w / 2], [px + t / 2, f, pz - w / 2], [px + t / 2, f, pz + w / 2], [px - t / 2, f, pz + w / 2]], 'threshold'));
   }
   for (const [dx, dz] of [[1, -1], [1, 1], [-1, 1], [-1, -1]]) {
     const d = (ap + t / 2) / Math.SQRT2, px = cx + dx * d, pz = cz + dz * d;
