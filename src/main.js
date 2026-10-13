@@ -6,6 +6,7 @@ import { World } from './world.js';
 import { Water } from './water.js';
 import { Clouds } from './sky.js';
 import { Flocks } from './birds.js';
+import { Sound } from './audio.js';
 import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
 import { readFragment, writeFragment, randomSeed } from './url.js';
@@ -29,6 +30,11 @@ const world = new World(scene, seedHash, fields, {
 });
 const player = new Player(camera, renderer.domElement);
 const hint = document.getElementById('hint');
+const sound = new Sound();
+renderer.domElement.addEventListener('click', () => sound.start(), { once: true });
+player.onStep = (inWater) => sound.step(inWater);
+flocks.onWings = () => sound.wings();
+let nextDrip = 0;
 document.addEventListener('pointerlockchange', () => hint.classList.toggle('hidden', player.locked));
 
 const start = world.hall(frag.x, 0, frag.z);
@@ -61,6 +67,10 @@ renderer.setAnimationLoop((t) => {
     history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz }));
   }
   easeLight(dt, cx, cz);
+  const here = world.hall(cx, 0, cz);
+  sound.setRoom((here.hx * here.hz) / (11 * 11));
+  if (here.depth > 0 && t / 1000 > nextDrip) { sound.drip(); nextDrip = t / 1000 + 3 + Math.random() * 5; }
+  flocks.focus = [cx, cz];
   water.update(t / 1000);
   clouds.update(dt);
   flocks.update(t / 1000, dt);

@@ -9,7 +9,10 @@ function chevron(color) {
 }
 
 export class Flocks {
-  constructor(scene, seedHash) { this.scene = scene; this.seedHash = seedHash; this.flocks = new Map(); }
+  constructor(scene, seedHash) {
+    this.scene = scene; this.seedHash = seedHash; this.flocks = new Map();
+    this.focus = null; this.onWings = null;   // the player's cell, and a callback for take-off and landing there
+  }
 
   add(cell) {
     const { hall } = cell;
@@ -36,6 +39,9 @@ export class Flocks {
     for (const f of this.flocks.values()) {
       const cycle = (t - f.settleAt) % f.period;
       const target = cycle >= 0 && cycle < 10 ? 1 : 0;
+      if (f.target !== undefined && target !== f.target && this.focus
+        && Math.max(Math.abs(f.hall.x - this.focus[0]), Math.abs(f.hall.z - this.focus[1])) <= 1) this.onWings?.();
+      f.target = target;
       f.settling += (target - f.settling) * (1 - Math.exp(-dt / 1.2));
       for (const b of f.birds) {
         const a = f.omega * t + b.phase;
