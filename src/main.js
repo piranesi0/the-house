@@ -27,9 +27,16 @@ world.update(frag.x, frag.z);
 player.place(...spawnPoint(start), 0);
 let curX = frag.x, curZ = frag.z;
 history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ }));
-let colors = colorsFor(start.light);
-scene.background = new THREE.Color(colors.ground);
-scene.fog = new THREE.Fog(colors.ground, 2, fogFar(start.light));
+let light = start.light;
+scene.background = new THREE.Color(colorsFor(light).ground);
+scene.fog = new THREE.Fog(colorsFor(light).ground, 2, fogFar(light));
+
+function easeLight(dt, cx, cz) {
+  const target = world.hall(cx, 0, cz).light;
+  light += (target - light) * (1 - Math.exp(-dt / 1.5));
+  const g = colorsFor(light).ground;
+  scene.background.setHex(g); scene.fog.color.setHex(g); scene.fog.far = fogFar(light);
+}
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
@@ -44,5 +51,6 @@ renderer.setAnimationLoop((t) => {
   if (cx !== curX || cz !== curZ) { curX = cx; curZ = cz; world.update(cx, cz);
     history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz }));
   }
+  easeLight(dt, cx, cz);
   renderer.render(scene, camera);
 });
