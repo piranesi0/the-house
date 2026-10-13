@@ -134,6 +134,10 @@ the private test starts early.
 
 ## 6. The look and the air
 
+> **Amended 2026-10-13:** surfaces are now shaded, with the line work kept on top. See
+> `2026-10-13-the-house-look-design.md`. The paragraphs below describe the v0 look, still
+> available as `look=lines`.
+
 - **Wireframe, but not raw.** Meshes render as crease edges (edge geometry with a 20 degree
   threshold) as one-pixel line segments, so a column is a few long lines. A second pass draws the
   same lines with depth test off at about 15 percent opacity, so the far side of an object reads
