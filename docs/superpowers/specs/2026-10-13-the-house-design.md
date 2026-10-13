@@ -82,7 +82,8 @@ the private test starts early.
 ## 4. The player
 
 - **Controls.** Click to capture the pointer; mouse to look; `W A S D` to walk; `Shift` to walk
-  slower (0.7 m/s); `Escape` releases the pointer. No jump, crouch or run. Walking speed 1.4 m/s.
+  slower (1.4 m/s); `Escape` releases the pointer. No jump, crouch or run. Walking speed 2.8 m/s
+  (doubled from 1.4 after the first walk, 2026-10-13).
   Eye height 1.7 m. Field of view 70 degrees. Look input is smoothed with a short exponential
   ease, 100 to 150 ms, tuned by feel. (The chat design said half a second; that is too laggy for
   mouse look, so the spec sets a shorter range.)

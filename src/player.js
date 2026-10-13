@@ -1,6 +1,7 @@
 import { cellOf } from './hall.js';
 
-const EYE = 1.7, RADIUS = 0.35, SPEED = 1.4, SLOW = 0.7, LOOK_EASE = 0.12;
+const EYE = 1.7, RADIUS = 0.35, LOOK_EASE = 0.12;
+export const SPEED = 2.8, SLOW = 1.4;   // doubled from the spec's 1.4 and 0.7 after the first walk (2026-10-13)
 
 export function floorAt(floors, x, z) {
   for (const f of floors) {

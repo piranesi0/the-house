@@ -22,3 +22,9 @@ test('moveDir walks toward where the camera looks', async () => {
   [dx, dz] = moveDir(0, -1, -Math.PI / 2);     // W at yaw -90°: the camera looks east
   near(dx, 1); near(dz, 0);
 });
+
+test('walking speed is 2.8 m/s, and Shift halves it', async () => {
+  const { SPEED, SLOW } = await import('../src/player.js');
+  assert.equal(SPEED, 2.8);
+  assert.equal(SLOW, 1.4);
+});
