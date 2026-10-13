@@ -10,6 +10,7 @@ import { Sound } from './audio.js';
 import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
 import { moodFor } from './mood.js';
+import { Debug } from './debug.js';
 import { readFragment, writeFragment, randomSeed } from './url.js';
 
 const frag = readFragment(location.hash);
@@ -30,6 +31,7 @@ const world = new World(scene, seedHash, fields, {
   onRemove: (c) => { water.remove(c); clouds.remove(c); flocks.remove(c); },
 }, frag.look);
 const player = new Player(camera, renderer.domElement);
+const debug = frag.debug ? new Debug(renderer) : null;
 const hint = document.getElementById('hint');
 const sound = new Sound();
 renderer.domElement.addEventListener('click', () => sound.start(), { once: true });
@@ -78,6 +80,7 @@ renderer.setAnimationLoop((t) => {
   if (cx !== curX || cz !== curZ) { curX = cx; curZ = cz; world.update(cx, cz);
     history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz, look: frag.look, debug: frag.debug }));
   }
+  world.tick();
   easeMood(dt, cx, cz);
   const here = world.hall(cx, 0, cz);
   sound.setRoom((here.hx * here.hz) / (11 * 11));
@@ -87,4 +90,5 @@ renderer.setAnimationLoop((t) => {
   clouds.update(dt);
   flocks.update(t / 1000, dt);
   renderer.render(scene, camera);
+  debug?.update(dt, world);
 });

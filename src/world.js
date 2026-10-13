@@ -7,6 +7,7 @@ import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
 import { colorsFor } from './palette.js';
+import { planLoads } from './schedule.js';
 
 const key = (x, y, z) => `${x},${y},${z}`;
 
@@ -14,6 +15,7 @@ export class World {
   constructor(scene, seedHash, fields, hooks = {}, look = 'shaded') {
     this.scene = scene; this.seedHash = seedHash; this.fields = fields; this.hooks = hooks; this.look = look;
     this.cells = new Map(); this.params = new Map();
+    this.queue = []; this.lastBuildMs = 0;
   }
   hall(x, y, z) {
     const k = key(x, y, z);
@@ -21,14 +23,23 @@ export class World {
     return this.params.get(k);
   }
   update(cx, cz) {
-    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) this.ensure(cx + dx, 0, cz + dz);
+    const have = new Set([...this.cells.values()].filter(c => c.hall.y === 0).map(c => `${c.hall.x},${c.hall.z}`));
+    const { now, later } = planLoads(have, cx, cz);
+    for (const [x, z] of now) this.ensure(x, 0, z);
+    this.queue = later;
     for (const [k, cell] of this.cells) {
       if (Math.max(Math.abs(cell.hall.x - cx), Math.abs(cell.hall.z - cz)) > 3) { this.hooks.onRemove?.(cell); disposeGroup(cell.group); this.cells.delete(k); }
     }
   }
+  // One queued hall per frame.
+  tick() {
+    const next = this.queue.shift();
+    if (next) this.ensure(next[0], 0, next[1]);
+  }
   ensure(x, y, z, opts = {}) {
     const k = key(x, y, z);
     if (this.cells.has(k)) return this.cells.get(k);
+    const t0 = performance.now();
     const hall = this.hall(x, y, z);
     const conns = connsFor(this.seedHash, hall, this.fields);
     const built = buildHall(hall, conns, opts);
@@ -52,6 +63,7 @@ export class World {
       this.ensure(x, 1, z, { vista: true, ceiling: false, floorHole: true });
     }
     this.hooks.onAdd?.(cell);
+    this.lastBuildMs = performance.now() - t0;
     return cell;
   }
   near(cx, cz) {
