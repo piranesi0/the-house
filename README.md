@@ -3,6 +3,8 @@
 A seeded, infinite, first-person wireframe House. Endless halls of statues, water in the
 lower halls, cloud above the upper ones.
 
+Live: https://piranesi0.github.io/the-house/ (the seed and hall are in the address bar).
+
 Inspired by Susanna Clarke's *Piranesi*. Inspired by, not adapted: nothing here is taken
 from the book.
 
