@@ -1,4 +1,4 @@
-import { box, lines, segs, aabbOfBox } from './ir.js';
+import { box, lines, segs, poly, aabbOfBox } from './ir.js';
 import { floorPatch } from './common.js';
 
 export const WELL = { hx: 3, hz: 5, drop: 4, ramp: 4, wallT: 0.5 };
@@ -29,6 +29,14 @@ export function buildStairwell(hall) {
     steps.push([cx - hx, f - y, cz - d], [cx + hx, f - y, cz - d], [cx - hx, f + y, cz + d], [cx + hx, f + y, cz + d]);
   }
   prims.push(segs(steps));
+  prims.push(
+    poly([[cx - hx, f, cz], [cx + hx, f, cz], [cx + hx, f - drop, cz - ramp], [cx - hx, f - drop, cz - ramp]], 'ramp'),
+    poly([[cx - hx, f, cz], [cx + hx, f, cz], [cx + hx, f + drop, cz + ramp], [cx - hx, f + drop, cz + ramp]], 'ramp'),
+  );
+  // Polys draw no lines: keep the ramps' long side edges as the wireframe.
+  const sides = [];
+  for (const sx of [-1, 1]) sides.push([cx + sx * hx, f, cz], [cx + sx * hx, f - drop, cz - ramp], [cx + sx * hx, f, cz], [cx + sx * hx, f + drop, cz + ramp]);
+  prims.push(segs(sides));
   prims.push(box([2 * hx, 0.02, hz - ramp], [cx, f - drop, cz - (hz + ramp) / 2]), box([2 * hx, 0.02, hz - ramp], [cx, f + drop, cz + (hz + ramp) / 2]));
   return { prims, boxes, floors };
 }

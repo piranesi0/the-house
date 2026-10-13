@@ -7,7 +7,9 @@ import { connsFor } from '../src/connectors.js';
 import { buildHall } from '../src/shapes/index.js';
 import { footprint } from '../src/shapes/footprint.js';
 import { signedArea2, polyPositions } from '../src/shapes/poly.js';
-import { WELL } from '../src/shapes/stairwell.js';
+import { WELL, buildStairwell } from '../src/shapes/stairwell.js';
+import { buildConnector } from '../src/shapes/connector.js';
+import { connectorParams, TYPES } from '../src/connectors.js';
 import { covers } from './helpers.mjs';
 
 const seed = fnv1a('ravens'), fields = makeFields(seed);
@@ -65,4 +67,28 @@ test('every doorway has a threshold floor through the wall thickness', () => {
     }
     for (const p of thresholds) assert.ok(p.points.every(q => q[1] === hall.floorY));
   }
+});
+
+test('stair ramps and steps connectors have sloped floor surfaces', () => {
+  const hall = { cx: 0, cz: 0, floorY: 0 };
+  const ramps = buildStairwell(hall).prims.filter(p => p.kind === 'poly' && p.name === 'ramp');
+  assert.equal(ramps.length, 2);
+  const ys = ramps.flatMap(p => p.points.map(q => q[1])).sort((a, b) => a - b);
+  assert.deepEqual([ys[0], ys[ys.length - 1]], [-WELL.drop, WELL.drop]);
+  for (const p of ramps) assert.ok(!p.down);
+
+  let found = false;
+  for (let i = 0; i < 2000 && !found; i++) {
+    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
+    const a = hallParams(seed, x, 0, z, fields), b = hallParams(seed, x + 1, 0, z, fields);
+    const conn = connectorParams(seed, a, b);
+    if (conn.type !== 'steps') continue;
+    found = true;
+    const floors = buildConnector(conn).prims.filter(p => p.kind === 'poly' && p.name === 'floor');
+    assert.equal(floors.length, 3);
+    const heights = new Set(floors.flatMap(p => p.points.map(q => q[1])));
+    assert.deepEqual([...heights].sort(), [0, TYPES.steps.raise].sort());
+    assert.ok(!buildConnector(conn).prims.some(p => p.kind === 'box' && p.size[1] === 0.02 && p.pos[1] === TYPES.steps.raise), 'floating floor box remains');
+  }
+  assert.ok(found, 'no steps connector in range');
 });
