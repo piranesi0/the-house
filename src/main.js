@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { fnv1a } from './rng.js';
 import { makeFields } from './fields.js';
-import { cellOf, spawnPoint } from './hall.js';
+import { cellOf, freeSpawn } from './hall.js';
 import { World } from './world.js';
 import { Water } from './water.js';
 import { Player } from './player.js';
@@ -26,7 +26,7 @@ document.addEventListener('pointerlockchange', () => hint.classList.toggle('hidd
 
 const start = world.hall(frag.x, 0, frag.z);
 world.update(frag.x, frag.z);
-player.place(...spawnPoint(start), 0);
+player.place(...freeSpawn(start, world.ensure(frag.x, 0, frag.z).boxes), 0);
 let curX = frag.x, curZ = frag.z;
 history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ }));
 let light = start.light;

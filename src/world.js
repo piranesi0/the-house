@@ -2,6 +2,7 @@ import { hallParams, pointInPolygon, cellOf } from './hall.js';
 import { connsFor } from './connectors.js';
 import { buildHall } from './shapes/index.js';
 import { buildConnector } from './shapes/connector.js';
+import { placeStatues } from './statues/place.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { colorsFor } from './palette.js';
 
@@ -30,12 +31,14 @@ export class World {
     const conns = connsFor(this.seedHash, hall, this.fields);
     const built = buildHall(hall, conns, opts);
     const prims = [...built.prims], boxes = [...built.boxes], floors = [...built.floors];
+    const statues = placeStatues(this.seedHash, hall, built.slots);
+    for (const s of statues) { prims.push(...s.prims); boxes.push(...s.boxes); }
     if (y === 0) for (const c of [conns.e, conns.s]) {
       const b = buildConnector(c); prims.push(...b.prims); boxes.push(...b.boxes); floors.push(...b.floors);
     }
     const group = buildGroup(prims, colorsFor(hall.light).line);
     this.scene.add(group);
-    const cell = { hall, group, boxes, floors, slots: built.slots };
+    const cell = { hall, group, boxes, floors, slots: built.slots, statues };
     this.cells.set(k, cell);
     this.hooks.onAdd?.(cell);
     return cell;

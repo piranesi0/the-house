@@ -65,3 +65,11 @@ export function pointInPolygon([x, z], poly) {
   }
   return inside;
 }
+
+// The hall's spawn point, or just inside its south doorway (kept clear of statues) if that is blocked.
+export function freeSpawn(hall, boxes, r = 0.35) {
+  const blocked = ([x, z]) => boxes.some(b => b.max[1] > hall.floorY + 0.2
+    && x > b.min[0] - r && x < b.max[0] + r && z > b.min[2] - r && z < b.max[2] + r);
+  const first = spawnPoint(hall);
+  return blocked(first) ? [hall.cx, hall.cz + hall.hz - 1.2] : first;
+}

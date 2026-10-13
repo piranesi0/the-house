@@ -20,9 +20,10 @@ export function buildCross(hall, conns, opts = {}) {
   const { cx, cz, hx, hz } = hall, ax = hx * 0.5, az = hz * 0.5;
   for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
     const x = cx + sx * (ax - 1.5), z = cz + sz * (az + 2.5);
-    // In a short arm this lands by the end doorway; leave the gap clear.
+    // In a short arm this lands by the end doorway; leave the gap clear. 2.1 and 3.6 are the
+    // 0.5 m doorway margin (2 m deep) plus a diagonally turned statue's 1.6 m half-footprint.
     const door = sz > 0 ? conns.s : conns.n;
-    if (Math.abs(x - cx) < door.width / 2 + 1.5 && Math.abs(z - cz) > hz - 3) continue;
+    if (Math.abs(x - cx) < door.width / 2 + 2.1 && Math.abs(z - cz) > hz - 3.6) continue;
     slots.push({ x, z, facing: facingToward(cx - x, cz - z), maxScale: 1.4, kind: 'niche' });
   }
   // A small cross has no room in its arms; fall back to the inner corners of the crossing.

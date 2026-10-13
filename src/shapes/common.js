@@ -53,7 +53,8 @@ export function nicheSlotsForPolygon(verts, openings = {}, inset = 2.0, spacing 
     const inward = [-e.n[0], -e.n[1]], facing = facingToward(inward[0], inward[1]);
     const o = openings[i], m = e.len / 2;
     for (let s = spacing; s <= e.len - spacing + 1e-6; s += spacing) {
-      if (o && Math.abs(s - m) < o.width / 2 + 1.5) continue;
+      // 1.75 = the 0.5 m doorway margin plus the widest statue footprint (1.13 m at scale 1.4) and a little air.
+      if (o && Math.abs(s - m) < o.width / 2 + 1.75) continue;
       slots.push({ x: e.a[0] + e.d[0] * s + inward[0] * inset, z: e.a[1] + e.d[1] * s + inward[1] * inset, facing, maxScale, kind: 'niche' });
     }
   }

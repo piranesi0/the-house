@@ -6,9 +6,11 @@ export function buildOctagon(hall, conns, opts = {}) {
   prims.push(octagonSlab(cx, f, cz, ap));
   if (opts.ceiling !== false) prims.push(octagonSlab(cx, f + ceiling, cz, ap));
   const slots = [];
-  const d = (ap - 2.0) / Math.SQRT2;
+  // In a small octagon the diagonal niches crowd the doorways; pull them in and keep them life-size.
+  const small = ap < 7.6;
+  const d = small ? ap - 3.35 : (ap - 2.0) / Math.SQRT2;
   for (const [dx, dz] of [[1, -1], [1, 1], [-1, 1], [-1, -1]]) {
-    slots.push({ x: cx + dx * d, z: cz + dz * d, facing: facingToward(-dx, -dz), maxScale: 1.4, kind: 'niche' });
+    slots.push({ x: cx + dx * d, z: cz + dz * d, facing: facingToward(-dx, -dz), maxScale: small ? 1 : 1.4, kind: 'niche' });
   }
   slots.push({ x: cx, z: cz, facing: 0, maxScale: 2, kind: 'dais' });
   return { prims, boxes, floors: [], slots };
