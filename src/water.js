@@ -28,7 +28,10 @@ export class Water {
     mesh.position.set(hall.cx, hall.floorY + hall.depth, hall.cz);
     this.scene.add(mesh);
     const waterY = hall.floorY + hall.depth;
-    const wet = (cell.statues || []).filter(s => pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
+    // Colossi are left dry (final review I2): the mirror is clipped only at waterY, not to the pool
+    // outline, so in look=lines a 10-15 m figure hung upside down under the see-through floor. Look
+    // phase C revisits reflections (pools cut out of the floor); until then only ordinary statues.
+    const wet = (cell.statues || []).filter(s => !s.colossus && pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
     const prims = wet.flatMap(s => s.prims);
     const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), { color, ghost: 0 });
     mirror.scale.y = -1;
