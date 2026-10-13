@@ -6,7 +6,7 @@ import { hallParams, pointInPolygon } from '../src/hall.js';
 import { connsFor } from '../src/connectors.js';
 import { buildHall } from '../src/shapes/index.js';
 import { placeStatues, doorZones } from '../src/statues/place.js';
-import { placeColossus, COLOSSUS } from '../src/statues/colossus.js';
+import { placeColossus, wellZones, COLOSSUS } from '../src/statues/colossus.js';
 import { footprint } from '../src/shapes/footprint.js';
 import { WELL } from '../src/shapes/stairwell.js';
 
@@ -36,11 +36,12 @@ test('about one hall in four taller than 28 m holds a colossus, and no lower hal
 test('every colossus is 10 to 15 m tall, inside the hall, and clear of walls, well, doorways and statues', () => {
   const seed = fnv1a('ravens'), fields = makeFields(seed);
   let n = 0, stairs = 0;
-  for (let x = -20; x < 20; x++) for (let z = -20; z < 20; z++) {
+  for (let x = -30; x < 30; x++) for (let z = -30; z < 30; z++) {
     const { hall, built, statues } = hallAt(seed, fields, x, z);
     const c = placeColossus(seed, hall, built.boxes, statues);
     if (!c) continue;
     n++;
+    if (hall.isStair) stairs++;
     assert.deepEqual(placeColossus(seed, hall, built.boxes, statues), c, 'not deterministic');
     assert.equal(c.family, 'figure'); assert.ok(c.colossus);
     const top = Math.max(...c.boxes.map(b => b.max[1])) - hall.floorY;
@@ -54,14 +55,14 @@ test('every colossus is 10 to 15 m tall, inside the hall, and clear of walls, we
       assert.ok(!statues.some(s => s.boxes.some(o => ov(b, o))), `colossus on a statue at (${x},${z})`);
       assert.ok(!doorZones(hall).some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0), 'colossus blocks a doorway');
       if (hall.isStair) {
-        stairs++;
         const { cx, cz } = hall;
         assert.ok(b.max[0] <= cx - WELL.hx || b.min[0] >= cx + WELL.hx || b.max[2] <= cz - WELL.hz || b.min[2] >= cz + WELL.hz, 'colossus stands in the stairwell');
+        assert.ok(!wellZones(hall).some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0), 'colossus blocks a stairwell entrance');
       }
     }
   }
   assert.ok(n >= 60, `only ${n} colossi`);
-  assert.ok(stairs >= 1, 'no stair hall colossus checked');
+  assert.ok(stairs >= 5, `only ${stairs} stair hall colossi checked`);
 });
 
 test('ordinary statues are the same as before colossi existed, and placing one changes none of them', () => {

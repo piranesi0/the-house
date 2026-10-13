@@ -16,6 +16,17 @@ export const COLOSSUS = { minCeiling: 28, chance: 0.5, height: [10, 15], step: 0
 const UPRIGHT = Object.keys(POSES).filter(p => !POSES[p].lie);
 const FACINGS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
 
+// The stairwell's end rails are 0.3 m thick (stairwell.js); the shaft walls leave a 1.5 m gap at cz
+// on each x side, and the 2.5 m in front of each gap mouth must stay open so you can get in.
+const RAIL = 0.3, APPROACH = 2.5, GAP_HALF = 1.5;
+export function wellZones({ cx, cz }) {
+  const edge = WELL.hx + WELL.wallT;
+  return [
+    { x0: cx + edge, x1: cx + edge + APPROACH, z0: cz - GAP_HALF, z1: cz + GAP_HALF },
+    { x0: cx - edge - APPROACH, x1: cx - edge, z0: cz - GAP_HALF, z1: cz + GAP_HALF },
+  ];
+}
+
 // Chebyshev distance in xz from (x, z) to an axis-aligned rect { x0, x1, z0, z1 }; 0 inside it.
 // A square of half-size r centred at (x, z) clears the rect exactly when this is at least r.
 const rectDist = (x, z, r) => Math.max(r.x0 - x, 0, x - r.x1, r.z0 - z, z - r.z1);
@@ -34,7 +45,7 @@ export function openestPoint(hall, solids, statues) {
     ...[...solids, ...statues.flatMap(s => s.boxes)].map(b => ({ x0: b.min[0], x1: b.max[0], z0: b.min[2], z1: b.max[2] })),
     ...doorZones(hall),
   ];
-  if (hall.isStair) rects.push({ x0: cx - WELL.hx - WELL.wallT, x1: cx + WELL.hx + WELL.wallT, z0: cz - WELL.hz - 0.3, z1: cz + WELL.hz + 0.3 });
+  if (hall.isStair) rects.push({ x0: cx - WELL.hx - WELL.wallT, x1: cx + WELL.hx + WELL.wallT, z0: cz - WELL.hz - RAIL, z1: cz + WELL.hz + RAIL }, ...wellZones(hall));
   let best = null;
   for (let x = cx - hx; x <= cx + hx + 1e-9; x += COLOSSUS.step) for (let z = cz - hz; z <= cz + hz + 1e-9; z += COLOSSUS.step) {
     if (!pointInPolygon([x, z], poly)) continue;
@@ -64,7 +75,8 @@ export function placeColossus(seedHash, hall, solids, statues) {
   if (!spot) return null;
   // Statue height is linear in scale (body and plinth both scale), so measure once at scale 1.
   const unit = boundsOf(buildStatue(inst, 1, damage).prims), unitH = unit.max[1] - unit.min[1];
-  const poly = footprint(hall), fits = fitter(hall, solids, statues);
+  const poly = footprint(hall), fits0 = fitter(hall, solids, statues), zones = hall.isStair ? wellZones(hall) : [];
+  const fits = (boxes) => fits0(boxes) && !boxes.some(b => zones.some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0));
   const inside = (boxes) => boxes.every(b => [[b.min[0], b.min[2]], [b.max[0], b.min[2]], [b.max[0], b.max[2]], [b.min[0], b.max[2]]].every(c => pointInPolygon(c, poly)));
   // The drawn height if it fits the open spot, else 5% shorter at a time, down to 10 m. No draws.
   for (let h = height; ; h = Math.max(COLOSSUS.height[0], h * 0.95)) {
