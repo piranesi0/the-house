@@ -77,7 +77,8 @@ const SURFACE_FRAG = /* glsl */`
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(vFields);
-    vec3 n = normalize(vN);
+    // Double-sided: a floor or ramp seen from below is lit as its underside.
+    vec3 n = normalize(vN) * (gl_FrontFacing ? 1.0 : -1.0);
     float h = vW.y - uFloorY;
     vec3 stone = m.stone * (1.0 + 0.12 * step(0.5, vKind) * step(vKind, 1.5));   // statues a touch lighter
     stone *= 1.0 - 0.25 * step(1.5, vKind);                                        // pool floors darker
@@ -96,7 +97,7 @@ const SURFACE_FRAG = /* glsl */`
   }
 `;
 
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], floorY = 0, ceiling = 8, side = THREE.FrontSide, dim = 1 } = {}) {
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], floorY = 0, ceiling = 8, side = THREE.DoubleSide, dim = 1 } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
     uniforms: { ...stopUniforms(), uKeyDir: { value: v3(keyDir).normalize() }, uFloorY: { value: floorY }, uCeiling: { value: ceiling }, uDim: { value: dim } },
