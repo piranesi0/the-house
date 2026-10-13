@@ -12,11 +12,17 @@ const inside = (boxes, x, y, z) => boxes.some(b => x > b.min[0] && x < b.max[0] 
 export function checkHall(hall, conns, built) {
   const { cx, cz, hx, hz, wall: t } = hall;
   assert.ok(built.prims.length > 0 && built.boxes.length > 0);
+  const halfEdge = (side) => {
+    if (hall.shape === 'octagon') return hall.hx * Math.tan(Math.PI / 8);
+    if (hall.shape === 'cross') return (side === 'n' || side === 's') ? hall.hx * 0.5 : hall.hz * 0.5;
+    return (side === 'n' || side === 's') ? hx : hz;
+  };
+  const off = (side) => conns[side].width / 2 + (halfEdge(side) - conns[side].width / 2) / 2;
   const probes = {
-    n: { open: [cx, 1, cz - hz - t / 2], solid: [cx + conns.n.width / 2 + 2, 1, cz - hz - t / 2] },
-    s: { open: [cx, 1, cz + hz + t / 2], solid: [cx - conns.s.width / 2 - 2, 1, cz + hz + t / 2] },
-    e: { open: [cx + hx + t / 2, 1, cz], solid: [cx + hx + t / 2, 1, cz + conns.e.width / 2 + 2] },
-    w: { open: [cx - hx - t / 2, 1, cz], solid: [cx - hx - t / 2, 1, cz - conns.w.width / 2 - 2] },
+    n: { open: [cx, 1, cz - hz - t / 2], solid: [cx + off('n'), 1, cz - hz - t / 2] },
+    s: { open: [cx, 1, cz + hz + t / 2], solid: [cx - off('s'), 1, cz + hz + t / 2] },
+    e: { open: [cx + hx + t / 2, 1, cz], solid: [cx + hx + t / 2, 1, cz + off('e')] },
+    w: { open: [cx - hx - t / 2, 1, cz], solid: [cx - hx - t / 2, 1, cz - off('w')] },
   };
   for (const [side, p] of Object.entries(probes)) {
     assert.ok(!inside(built.boxes, ...p.open), `${hall.shape} ${side} doorway blocked`);
