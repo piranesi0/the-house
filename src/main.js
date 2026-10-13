@@ -1,3 +1,4 @@
+import './fogchunk.js';   // first: patches three's fog chunk before any material compiles
 import * as THREE from 'three';
 import { fnv1a } from './rng.js';
 import { makeFields } from './fields.js';
@@ -58,8 +59,9 @@ const first = sceneColours();
 scene.background = new THREE.Color(first.bg);
 scene.fog = new THREE.Fog(first.bg, 2, first.far);
 
-// The lines, water grid and birds still use scene.fog; surfaces fog themselves per vertex. Both
-// ease toward the current hall over about 1.5 s so the background never steps at a doorway.
+// The lines, water grid and birds still use scene.fog (measured like the stone, fogchunk.js);
+// surfaces fog themselves per vertex. Both ease toward the current
+// hall over about 1.5 s so the background never steps at a doorway.
 function easeMood(dt, cx, cz) {
   const here = world.hall(cx, 0, cz), k = 1 - Math.exp(-dt / 1.5);
   for (const f of ['light', 'water', 'decay']) eased[f] += (here[f] - eased[f]) * k;
