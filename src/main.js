@@ -1,27 +1,23 @@
+// Interim; replaced again in Task 9.
 import * as THREE from 'three';
 import { fnv1a } from './rng.js';
 import { makeFields } from './fields.js';
-import { hallParams } from './hall.js';
-import { connsFor } from './connectors.js';
-import { buildHall, BUILDERS } from './shapes/index.js';
-import { buildGroup } from './build.js';
+import { World } from './world.js';
 import { colorsFor, fogFar } from './palette.js';
 
 const seedHash = fnv1a('ravens');
 const fields = makeFields(seedHash);
-let hx = 0;
-while (!BUILDERS[hallParams(seedHash, hx, 0, 0, fields).shape]) hx++;
-const hall = hallParams(seedHash, hx, 0, 0, fields);
-const built = buildHall(hall, connsFor(seedHash, hall, fields));
-const colors = colorsFor(hall.light);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
+const world = new World(scene, seedHash, fields);
+world.update(0, 0);
+const hall = world.hall(0, 0, 0);
+const colors = colorsFor(hall.light);
 scene.background = new THREE.Color(colors.ground);
 scene.fog = new THREE.Fog(colors.ground, 2, fogFar(hall.light));
-scene.add(buildGroup(built.prims, colors.line));
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
