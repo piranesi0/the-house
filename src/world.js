@@ -40,6 +40,10 @@ export class World {
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues };
     this.cells.set(k, cell);
+    if (y === 0 && hall.isStair) {
+      this.ensure(x, -1, z, { vista: true, ceiling: false });
+      this.ensure(x, 1, z, { vista: true, ceiling: false, floorHole: true });
+    }
     this.hooks.onAdd?.(cell);
     return cell;
   }

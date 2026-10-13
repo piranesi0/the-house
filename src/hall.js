@@ -40,10 +40,13 @@ export function hallParams(seedHash, x, y, z, fields) {
     else { fx = 0.95; fz = rng.range(0.6, 0.7); }
   }
   if (shape === 'square' || shape === 'octagon') fz = fx;
-  const hx = fx * CELL / 2 - wall, hz = fz * CELL / 2 - wall;
-  const ceiling = rng.range(6, 14);
+  let hx = fx * CELL / 2 - wall, hz = fz * CELL / 2 - wall;
+  let ceiling = rng.range(6, 14);
   const pStair = (water > 0.6 || light > 0.7) ? 0.16 : 0.08;
   const isStair = rng.chance(pStair);
+  // A stairwell needs a big hall around it: room to walk beside it, and for statues.
+  // and a ceiling that stays below the storey above, which it looks into.
+  if (isStair) { hx = Math.max(fx, 0.9) * CELL / 2 - wall; hz = Math.max(fz, 0.9) * CELL / 2 - wall; ceiling = Math.min(ceiling, STOREY - 1); }
   const depth = depthFor(water);
   const pool = depth > 0 ? poolOutline(rng, hx, hz) : null;
   const hasBirds = rng.chance(0.15 * light * (1 - water));
@@ -66,10 +69,13 @@ export function pointInPolygon([x, z], poly) {
   return inside;
 }
 
-// The hall's spawn point, or just inside its south doorway (kept clear of statues) if that is blocked.
+// The hall's spawn point if it is inside the hall and clear, else just inside a doorway (doorway
+// zones are kept free of statues; west and east come first because a stairwell runs north-south).
 export function freeSpawn(hall, boxes, r = 0.35) {
-  const blocked = ([x, z]) => boxes.some(b => b.max[1] > hall.floorY + 0.2
-    && x > b.min[0] - r && x < b.max[0] + r && z > b.min[2] - r && z < b.max[2] + r);
-  const first = spawnPoint(hall);
-  return blocked(first) ? [hall.cx, hall.cz + hall.hz - 1.2] : first;
+  const { cx, cz, hx, hz } = hall;
+  const ok = ([x, z]) => Math.abs(x - cx) <= hx - r && Math.abs(z - cz) <= hz - r
+    && !boxes.some(b => b.max[1] > hall.floorY + 0.2 && b.min[1] < hall.floorY + 1.8
+      && x > b.min[0] - r && x < b.max[0] + r && z > b.min[2] - r && z < b.max[2] + r);
+  const candidates = [spawnPoint(hall), [cx - hx + 1.2, cz], [cx + hx - 1.2, cz], [cx, cz + hz - 1.2], [cx, cz - hz + 1.2]];
+  return candidates.find(ok) ?? candidates[1];
 }
