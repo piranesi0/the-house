@@ -27,15 +27,18 @@ export class World {
     const have = new Set([...this.cells.values()].filter(c => c.hall.y === 0).map(c => `${c.hall.x},${c.hall.z}`));
     const { now, later } = planLoads(have, cx, cz);
     for (const [x, z] of now) this.ensure(x, 0, z);
-    this.queue = later;
     for (const [k, cell] of this.cells) {
       if (Math.max(Math.abs(cell.hall.x - cx), Math.abs(cell.hall.z - cz)) > 3) { this.hooks.onRemove?.(cell); disposeGroup(cell.group); this.cells.delete(k); }
     }
+    // Vista halls queued by a stair hall (here or on an earlier crossing) stay at the front while
+    // their stair hall is still loaded; planLoads only knows about y = 0.
+    const vistas = this.queue.filter(e => e.y !== 0 && this.cells.has(key(e.x, 0, e.z)) && !this.cells.has(key(e.x, e.y, e.z)));
+    this.queue = [...vistas, ...later.map(([x, z]) => ({ x, y: 0, z }))];
   }
-  // One queued hall per frame.
+  // One queued hall per frame. Entries are { x, y, z, opts }.
   tick() {
     const next = this.queue.shift();
-    if (next) this.ensure(next[0], 0, next[1]);
+    if (next) this.ensure(next.x, next.y, next.z, next.opts);
   }
   ensure(x, y, z, opts = {}) {
     const k = key(x, y, z);
@@ -59,9 +62,10 @@ export class World {
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues };
     this.cells.set(k, cell);
+    // The vista halls above and below a stair hall are only seen through the well and never feed
+    // collision (near() reads y = 0), so they build on the next frames instead of this one.
     if (y === 0 && hall.isStair) {
-      this.ensure(x, -1, z, { vista: true, ceiling: false });
-      this.ensure(x, 1, z, { vista: true, ceiling: false, floorHole: true });
+      this.queue.unshift({ x, y: -1, z, opts: { vista: true, ceiling: false } }, { x, y: 1, z, opts: { vista: true, ceiling: false, floorHole: true } });
     }
     this.hooks.onAdd?.(cell);
     this.lastBuildMs = performance.now() - t0;
