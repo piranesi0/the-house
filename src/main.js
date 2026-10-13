@@ -3,6 +3,7 @@ import { fnv1a } from './rng.js';
 import { makeFields } from './fields.js';
 import { cellOf, spawnPoint } from './hall.js';
 import { World } from './world.js';
+import { Water } from './water.js';
 import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
 import { readFragment, writeFragment, randomSeed } from './url.js';
@@ -17,7 +18,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
-const world = new World(scene, seedHash, fields);
+const water = new Water(scene);
+const world = new World(scene, seedHash, fields, { onAdd: (c) => water.add(c), onRemove: (c) => water.remove(c) });
 const player = new Player(camera, renderer.domElement);
 const hint = document.getElementById('hint');
 document.addEventListener('pointerlockchange', () => hint.classList.toggle('hidden', player.locked));
@@ -52,5 +54,6 @@ renderer.setAnimationLoop((t) => {
     history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz }));
   }
   easeLight(dt, cx, cz);
+  water.update(t / 1000);
   renderer.render(scene, camera);
 });

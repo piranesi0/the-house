@@ -1,4 +1,4 @@
-import { hallParams } from './hall.js';
+import { hallParams, pointInPolygon, cellOf } from './hall.js';
 import { connsFor } from './connectors.js';
 import { buildHall } from './shapes/index.js';
 import { buildConnector } from './shapes/connector.js';
@@ -8,8 +8,8 @@ import { colorsFor } from './palette.js';
 const key = (x, y, z) => `${x},${y},${z}`;
 
 export class World {
-  constructor(scene, seedHash, fields) {
-    this.scene = scene; this.seedHash = seedHash; this.fields = fields;
+  constructor(scene, seedHash, fields, hooks = {}) {
+    this.scene = scene; this.seedHash = seedHash; this.fields = fields; this.hooks = hooks;
     this.cells = new Map(); this.params = new Map();
   }
   hall(x, y, z) {
@@ -20,7 +20,7 @@ export class World {
   update(cx, cz) {
     for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) this.ensure(cx + dx, 0, cz + dz);
     for (const [k, cell] of this.cells) {
-      if (Math.max(Math.abs(cell.hall.x - cx), Math.abs(cell.hall.z - cz)) > 3) { disposeGroup(cell.group); this.cells.delete(k); }
+      if (Math.max(Math.abs(cell.hall.x - cx), Math.abs(cell.hall.z - cz)) > 3) { this.hooks.onRemove?.(cell); disposeGroup(cell.group); this.cells.delete(k); }
     }
   }
   ensure(x, y, z, opts = {}) {
@@ -37,6 +37,7 @@ export class World {
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots };
     this.cells.set(k, cell);
+    this.hooks.onAdd?.(cell);
     return cell;
   }
   near(cx, cz) {
@@ -47,5 +48,9 @@ export class World {
     }
     return { boxes, floors };
   }
-  depthAt() { return 0; }   // pools arrive in Task 14
+  depthAt(wx, wz) {
+    const hall = this.hall(cellOf(wx), 0, cellOf(wz));
+    if (!hall.pool) return 0;
+    return pointInPolygon([wx - hall.cx, wz - hall.cz], hall.pool) ? hall.depth : 0;
+  }
 }

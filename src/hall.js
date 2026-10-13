@@ -56,3 +56,12 @@ export function hallParams(seedHash, x, y, z, fields) {
 export function spawnPoint(hall) {
   return hall.isStair ? [hall.cx - 8, hall.cz] : [hall.cx, hall.cz];
 }
+
+export function pointInPolygon([x, z], poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
