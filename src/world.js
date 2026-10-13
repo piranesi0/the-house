@@ -6,6 +6,8 @@ import { placeStatues } from './statues/place.js';
 import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
+import { windowsFor } from './windows.js';
+import { buildEffects } from './effects.js';
 import { colorsFor } from './palette.js';
 import { planLoads } from './schedule.js';
 
@@ -56,8 +58,12 @@ export class World {
     // Geometry is built around the hall's own centre and placed by the group, so float32 vertex
     // buffers stay precise however far from the origin the hall is.
     const shaded = this.look === 'shaded';
-    const surface = shaded ? { material: surfaceMaterial({ ceiling: hall.ceiling }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
+    // Windows, the key light and the effects mesh belong to y = 0 halls; vista halls keep the
+    // default key light and get no effects (they are only seen through the well).
+    const win = shaded && y === 0 ? windowsFor(this.seedHash, hall, conns, statues) : null;
+    const surface = shaded ? { material: surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface });
+    if (win) { const fx = buildEffects(hall, win); if (fx) group.add(fx); }
     group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues };

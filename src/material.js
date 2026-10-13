@@ -110,3 +110,47 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
+
+// Window glows and light shafts: additive, no depth write, fogged by the hall-centre mood. Like the
+// surface shader it works in view space: vertices are hall-local, the group sits at (cx, floorY,
+// cz), so position.y is the height above the floor and nothing touches world coordinates.
+const EFFECTS_VERT = /* glsl */`
+  attribute float alpha;
+  attribute vec3 tint;
+  varying vec3 vV, vTint;
+  varying vec2 vUv;
+  varying float vAlpha, vH;
+  #include <clipping_planes_pars_vertex>
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vV = mvPosition.xyz; vH = position.y; vUv = uv; vAlpha = alpha; vTint = tint;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <clipping_planes_vertex>
+  }
+`;
+const EFFECTS_FRAG = /* glsl */`
+  precision highp float;
+  ${MOOD_GLSL}
+  uniform vec3 uFields;
+  varying vec3 vV, vTint;
+  varying vec2 vUv;
+  varying float vAlpha, vH;
+  #include <clipping_planes_pars_fragment>
+  void main() {
+    #include <clipping_planes_fragment>
+    Mood m = moodFor(uFields);
+    // Soft edges across the quad; uv.x runs across a shaft or glow, uv.y along it.
+    float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(0.0, 0.35, 1.0 - vUv.x);
+    float a = vAlpha * edge * (1.0 - fogAmount(m, length(vV), vH));
+    // Premultiplied: the material sets premultipliedAlpha, so additive blending is ONE, ONE.
+    gl_FragColor = vec4(vTint * a, a);
+  }
+`;
+export function effectsMaterial({ fields = [0.5, 0, 0] } = {}) {
+  return new THREE.ShaderMaterial({
+    vertexShader: EFFECTS_VERT, fragmentShader: EFFECTS_FRAG,
+    uniforms: { ...stopUniforms(), uFields: { value: v3(fields) } },
+    transparent: true, premultipliedAlpha: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    side: THREE.DoubleSide, clipping: true,
+  });
+}
