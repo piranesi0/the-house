@@ -1,0 +1,8 @@
+{
+  "name": "the-house",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test \"test/*.test.mjs\"", "serve": "python -m http.server 8080" },
+  "license": "MIT"
+}
