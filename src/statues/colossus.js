@@ -9,9 +9,11 @@ import { buildStatue, fitter, doorZones } from './place.js';
 import { boundsOf, translatePrims, translateBoxes, rotateYPrims, rotateYBoxes } from '../shapes/ir.js';
 import { footprint } from '../shapes/footprint.js';
 import { WELL } from '../shapes/stairwell.js';
+import { reachGuard } from './reach.js';
 
-// chance is the roll; about half the rolls fail to fit, so about a quarter of tall halls have one.
-export const COLOSSUS = { minCeiling: 28, chance: 0.5, height: [10, 15], step: 0.5 };
+// chance is the roll; about a third of the rolls fail to fit (or would cut the hall into pockets), so
+// about a quarter of tall halls have one (measured 23-29% over four seeds, 2026-10-13).
+export const COLOSSUS = { minCeiling: 28, chance: 0.7, height: [10, 15], step: 0.5 };
 // Upright poses only: a lying figure scaled to 10 m tall would be 40 m long.
 const UPRIGHT = Object.keys(POSES).filter(p => !POSES[p].lie);
 const FACINGS = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
@@ -78,11 +80,16 @@ export function placeColossus(seedHash, hall, solids, statues) {
   const poly = footprint(hall), fits0 = fitter(hall, solids, statues), zones = hall.isStair ? wellZones(hall) : [];
   const fits = (boxes) => fits0(boxes) && !boxes.some(b => zones.some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0));
   const inside = (boxes) => boxes.every(b => [[b.min[0], b.min[2]], [b.max[0], b.min[2]], [b.max[0], b.max[2]], [b.min[0], b.max[2]]].every(c => pointInPolygon(c, poly)));
+  // A colossus must not cut the hall into pockets (final review C1: in a cross hall the openest
+  // point is the crossing, between the four corner statues). Every pair of doorways (and well gaps)
+  // that could reach each other before it stands must still do so; see reach.js. A placement that
+  // fails shrinks like one that does not fit.
+  const keepsDoors = reachGuard(hall, [...solids, ...statues.flatMap(s => s.boxes)]);
   // The drawn height if it fits the open spot, else 5% shorter at a time, down to 10 m. No draws.
   for (let h = height; ; h = Math.max(COLOSSUS.height[0], h * 0.95)) {
     const scale = h / unitH, built = buildStatue(inst, scale, damage);
     const boxes = translateBoxes(rotateYBoxes(built.boxes, facing), spot.x, hall.floorY, spot.z);
-    if (inside(boxes) && fits(boxes)) {
+    if (inside(boxes) && fits(boxes) && keepsDoors(boxes)) {
       return {
         slot: { x: spot.x, z: spot.z, facing, maxScale: scale, kind: 'colossus' },
         ...inst, scale, damage, colossus: true,

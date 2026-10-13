@@ -94,3 +94,59 @@ test('ruling D1: no hall off the ground storey gets a colossus, stair-hall vista
   }
   assert.ok(tall > 50, `only ${tall} tall off-storey halls checked`);
 });
+
+// Final review C1: a colossus must never cut a hall into pockets. An independent flood fill (0.2 m,
+// diagonal-free, the player's 0.35 m radius, body band 0.2-1.8 m) from just inside each doorway,
+// and each well gap in a stair hall; every pair connected without the colossus stays connected.
+function pockets(hall, boxes) {
+  const s = 0.2, r = 0.35, { cx, cz, hx, hz, floorY } = hall, fp = footprint(hall);
+  const nx = Math.ceil(hx / s), nz = Math.ceil(hz / s), m = 2 * nz + 1;
+  const band = boxes.filter(b => b.max[1] >= floorY + 0.2 && b.min[1] <= floorY + 1.8);
+  const at = (i, j) => [cx + (i - nx) * s, cz + (j - nz) * s];
+  const free = (i, j) => { const [x, z] = at(i, j); return pointInPolygon([x, z], fp) && !band.some(b => x > b.min[0] - r && x < b.max[0] + r && z > b.min[2] - r && z < b.max[2] + r); };
+  const label = new Map(), comp = (i, j) => {
+    if (i < 0 || j < 0 || i > 2 * nx || j >= m || !free(i, j)) return -1;
+    const k0 = i * m + j;
+    if (label.has(k0)) return label.get(k0);
+    const stack = [[i, j]]; label.set(k0, k0);
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      for (const [p, q] of [[a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]]) {
+        if (p < 0 || q < 0 || p > 2 * nx || q >= m || label.has(p * m + q) || !free(p, q)) continue;
+        label.set(p * m + q, k0); stack.push([p, q]);
+      }
+    }
+    return k0;
+  };
+  const e = WELL.hx + WELL.wallT + 1;
+  const seeds = [[cx, cz - hz + 1], [cx, cz + hz - 1], [cx + hx - 1, cz], [cx - hx + 1, cz], ...(hall.isStair ? [[cx + e, cz], [cx - e, cz]] : [])];
+  return seeds.map(([x, z]) => comp(Math.round((x - cx) / s) + nx, Math.round((z - cz) / s) + nz));
+}
+
+test('no colossus cuts a hall into pockets: doorways that reached each other still do', () => {
+  const shapes = new Set();
+  let n = 0, cross = 0, stairs = 0;
+  for (const name of ['ravens', 'kelp-salt', 'moth']) {
+    const seed = fnv1a(name), fields = makeFields(seed);
+    const halls = [];
+    for (let x = -14; x < 14; x++) for (let z = -14; z < 14; z++) halls.push([x, z]);
+    if (name === 'ravens') halls.push([-3, 2]);   // the review's probe hall: a cross split four ways
+    for (const [x, z] of halls) {
+      const { hall, built, statues } = hallAt(seed, fields, x, z);
+      const c = placeColossus(seed, hall, built.boxes, statues);
+      if (!c) continue;
+      n++; shapes.add(hall.shape); if (hall.shape === 'cross') cross++; if (hall.isStair) stairs++;
+      const solids = [...built.boxes, ...statues.flatMap(s => s.boxes)];
+      const before = pockets(hall, solids), after = pockets(hall, [...solids, ...c.boxes]);
+      for (let a = 0; a < before.length; a++) for (let b = a + 1; b < before.length; b++) {
+        if (before[a] < 0 || before[a] !== before[b]) continue;
+        assert.ok(after[a] >= 0 && after[a] === after[b], `${name} ${hall.shape} (${x},${z}): colossus cuts seed ${a} off from seed ${b}`);
+      }
+    }
+  }
+  assert.ok(n >= 150, `only ${n} colossus halls checked`);
+  // Long halls stop at 26 m, under COLOSSUS.minCeiling, so they never hold one.
+  assert.deepEqual([...shapes].sort(), ['colonnade', 'cross', 'octagon', 'square'], 'not every shape checked');
+  assert.ok(stairs >= 5, `only ${stairs} stair-hall colossi checked`);
+  assert.ok(cross >= 10, `only ${cross} cross-hall colossi checked`);
+});
