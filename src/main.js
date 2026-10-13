@@ -27,7 +27,7 @@ const flocks = new Flocks(scene, seedHash);
 const world = new World(scene, seedHash, fields, {
   onAdd: (c) => { water.add(c); clouds.add(c); flocks.add(c); },
   onRemove: (c) => { water.remove(c); clouds.remove(c); flocks.remove(c); },
-});
+}, frag.look);
 const player = new Player(camera, renderer.domElement);
 const hint = document.getElementById('hint');
 const sound = new Sound();
@@ -41,7 +41,7 @@ const start = world.hall(frag.x, 0, frag.z);
 world.update(frag.x, frag.z);
 player.place(...freeSpawn(start, world.ensure(frag.x, 0, frag.z).boxes), 0);
 let curX = frag.x, curZ = frag.z;
-history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ }));
+history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ, look: frag.look, debug: frag.debug }));
 let light = start.light;
 scene.background = new THREE.Color(colorsFor(light).ground);
 scene.fog = new THREE.Fog(colorsFor(light).ground, 2, fogFar(light));
@@ -64,7 +64,7 @@ renderer.setAnimationLoop((t) => {
   player.update(dt, world);
   const cx = cellOf(player.pos.x), cz = cellOf(player.pos.z);
   if (cx !== curX || cz !== curZ) { curX = cx; curZ = cz; world.update(cx, cz);
-    history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz }));
+    history.replaceState(null, '', writeFragment({ seed, x: cx, z: cz, look: frag.look, debug: frag.debug }));
   }
   easeLight(dt, cx, cz);
   const here = world.hall(cx, 0, cz);

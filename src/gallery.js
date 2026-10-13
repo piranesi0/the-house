@@ -35,7 +35,7 @@ function build(withVariants) {
   const rs = rows(withVariants);
   rs.forEach((row, r) => row.forEach(([text, fam, subject, variant], c) => {
     const body = FAMILY_BUILDERS[fam](subject, 1, variant);
-    const group = buildGroup(body.prims, LINE, 0.12);
+    const group = buildGroup(body.prims, { color: LINE, ghost: 0.12 });
     group.position.set((c - (row.length - 1) / 2) * GAP, 0, r * ROW);
     scene.add(group);
     const label = document.createElement('div');

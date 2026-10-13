@@ -30,7 +30,7 @@ export class Water {
     const waterY = hall.floorY + hall.depth;
     const wet = (cell.statues || []).filter(s => pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
     const prims = wet.flatMap(s => s.prims);
-    const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), color, 0);
+    const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), { color, ghost: 0 });
     mirror.scale.y = -1;
     mirror.position.set(hall.cx, 2 * waterY, hall.cz);
     mirror.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = 0.4; o.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), waterY)]; } });

@@ -13,7 +13,7 @@ export class Clouds {
     const n = Math.round(1 + 8 * hall.light), color = colorsFor(hall.light).line, blobs = [];
     const baseY = hall.floorY + hall.ceiling + 6;
     for (let i = 0; i < n; i++) {
-      const g = buildGroup([sphere(rng.range(3, 6), [0, 0, 0])], color, 0);
+      const g = buildGroup([sphere(rng.range(3, 6), [0, 0, 0])], { color, ghost: 0 });
       g.position.set(hall.cx + rng.range(-12, 12), baseY + rng.range(2, 10), hall.cz + rng.range(-12, 12));
       this.scene.add(g);
       blobs.push({ g, speed: rng.range(0.2, 0.5), cx: hall.cx });

@@ -5,13 +5,14 @@ import { buildConnector } from './shapes/connector.js';
 import { placeStatues } from './statues/place.js';
 import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
+import { surfaceMaterial } from './material.js';
 import { colorsFor } from './palette.js';
 
 const key = (x, y, z) => `${x},${y},${z}`;
 
 export class World {
-  constructor(scene, seedHash, fields, hooks = {}) {
-    this.scene = scene; this.seedHash = seedHash; this.fields = fields; this.hooks = hooks;
+  constructor(scene, seedHash, fields, hooks = {}, look = 'shaded') {
+    this.scene = scene; this.seedHash = seedHash; this.fields = fields; this.hooks = hooks; this.look = look;
     this.cells = new Map(); this.params = new Map();
   }
   hall(x, y, z) {
@@ -33,13 +34,15 @@ export class World {
     const built = buildHall(hall, conns, opts);
     const prims = [...built.prims], boxes = [...built.boxes], floors = [...built.floors];
     const statues = placeStatues(this.seedHash, hall, built.slots, built.boxes);
-    for (const s of statues) { prims.push(...s.prims); boxes.push(...s.boxes); }
+    for (const s of statues) { prims.push(...s.prims.map(p => ({ ...p, tag: 'statue' }))); boxes.push(...s.boxes); }
     if (y === 0) for (const c of [conns.e, conns.s]) {
       const b = buildConnector(c); prims.push(...b.prims); boxes.push(...b.boxes); floors.push(...b.floors);
     }
     // Geometry is built around the hall's own centre and placed by the group, so float32 vertex
     // buffers stay precise however far from the origin the hall is.
-    const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), colorsFor(hall.light).line);
+    const shaded = this.look === 'shaded';
+    const surface = shaded ? { material: surfaceMaterial({ floorY: hall.floorY, ceiling: hall.ceiling }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
+    const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface });
     group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues };
