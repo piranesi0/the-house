@@ -54,13 +54,19 @@ export const MOOD_GLSL = /* glsl */`
 const SURFACE_VERT = /* glsl */`
   attribute vec3 fields;
   attribute float kind;
-  varying vec3 vN, vW, vFields;
-  varying float vKind;
+  // vN: world-oriented normal (the key light is a world direction); vNV: view-space normal and vV:
+  // view-space position, for the sheen and fog; vH: height above the hall floor.
+  varying vec3 vN, vNV, vV, vFields;
+  varying float vH, vKind;
   #include <clipping_planes_pars_vertex>
   void main() {
-    vec4 w = modelMatrix * vec4(position, 1.0);
-    vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vFields = fields; vKind = kind;
-    vec4 mvPosition = viewMatrix * w;
+    // Vertices are hall-local and the group sits at (cx, floorY, cz), so modelViewMatrix (built on
+    // the CPU in float64) keeps far-from-origin halls precise, and position.y is the height above
+    // the floor. Nothing here touches world coordinates.
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vV = mvPosition.xyz; vH = position.y;
+    vN = normalize(mat3(modelMatrix) * normal); vNV = normalize(normalMatrix * normal);
+    vFields = fields; vKind = kind;
     gl_Position = projectionMatrix * mvPosition;
     #include <clipping_planes_vertex>
   }
@@ -70,16 +76,17 @@ const SURFACE_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
   uniform vec3 uKeyDir;        // direction the light travels, normalised
-  uniform float uFloorY, uCeiling, uDim;
-  varying vec3 vN, vW, vFields;
-  varying float vKind;
+  uniform float uCeiling, uDim;
+  varying vec3 vN, vNV, vV, vFields;
+  varying float vH, vKind;
   #include <clipping_planes_pars_fragment>
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(vFields);
     // Double-sided: a floor or ramp seen from below is lit as its underside.
-    vec3 n = normalize(vN) * (gl_FrontFacing ? 1.0 : -1.0);
-    float h = vW.y - uFloorY;
+    float facing = gl_FrontFacing ? 1.0 : -1.0;
+    vec3 n = normalize(vN) * facing;
+    float h = vH;
     vec3 stone = m.stone * (1.0 + 0.12 * step(0.5, vKind) * step(vKind, 1.5));   // statues a touch lighter
     stone *= 1.0 - 0.25 * step(1.5, vKind);                                        // pool floors darker
     vec3 hemi = mix(m.bounce, m.sky, n.y * 0.5 + 0.5);
@@ -87,20 +94,19 @@ const SURFACE_FRAG = /* glsl */`
     float grad = mix(1.0 - m.gradient, 1.0, clamp(h / max(uCeiling, 1.0), 0.0, 1.0));
     float contact = 1.0 - m.contact * (1.0 - smoothstep(0.0, 0.6, h));
     vec3 color = stone * (hemi + key) * grad * contact;
-    vec3 viewDir = normalize(cameraPosition - vW);
-    float sheen = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0) * uWaterSheen * vFields.y * step(1.5, vKind);
+    float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * step(1.5, vKind);
     color += m.sky * sheen;
     color *= uDim;
-    float dist = length(vW - cameraPosition);
+    float dist = length(vV);
     color = mix(color, m.haze, fogAmount(m, dist, h));
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], floorY = 0, ceiling = 8, side = THREE.DoubleSide, dim = 1 } = {}) {
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1 } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
-    uniforms: { ...stopUniforms(), uKeyDir: { value: v3(keyDir).normalize() }, uFloorY: { value: floorY }, uCeiling: { value: ceiling }, uDim: { value: dim } },
+    uniforms: { ...stopUniforms(), uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }

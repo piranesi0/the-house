@@ -52,7 +52,7 @@ export class World {
     // Geometry is built around the hall's own centre and placed by the group, so float32 vertex
     // buffers stay precise however far from the origin the hall is.
     const shaded = this.look === 'shaded';
-    const surface = shaded ? { material: surfaceMaterial({ floorY: hall.floorY, ceiling: hall.ceiling }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
+    const surface = shaded ? { material: surfaceMaterial({ ceiling: hall.ceiling }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface });
     group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
