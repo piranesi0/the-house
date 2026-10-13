@@ -3,6 +3,10 @@ export const cyl = (r1, r2, h, pos, rot = [0, 0, 0], seg = 12, name) => ({ kind:
 export const sphere = (r, pos, name) => ({ kind: 'sphere', r, pos, rot: [0, 0, 0], name });
 export const lines = (points, name) => ({ kind: 'lines', points, name });
 export const segs = (points, name) => ({ kind: 'segs', points, name });
+// A planar filled polygon, simple (no holes), triangulated in the xz projection. `down` winds the
+// face toward -y (ceilings); the default faces up.
+export const poly = (points, name, down = false) => ({ kind: 'poly', points, name, down });
+const hasPoints = (p) => p.kind === 'lines' || p.kind === 'segs' || p.kind === 'poly';
 
 export function aabbOfBox(size, pos) {
   return {
@@ -14,7 +18,7 @@ export function aabbOfBox(size, pos) {
 const isUpright = (rot) => rot[0] === 0 && rot[1] === 0 && rot[2] === 0;
 
 function extents(p) {
-  if (p.kind === 'lines' || p.kind === 'segs') {
+  if (hasPoints(p)) {
     const xs = p.points.map(q => q[0]), ys = p.points.map(q => q[1]), zs = p.points.map(q => q[2]);
     return { min: [Math.min(...xs), Math.min(...ys), Math.min(...zs)], max: [Math.max(...xs), Math.max(...ys), Math.max(...zs)] };
   }
@@ -44,7 +48,7 @@ export function boundsOf(prims) {
   return out;
 }
 
-export const mapPoints = (p, fn) => (p.kind === 'lines' || p.kind === 'segs') ? { ...p, points: p.points.map(fn) } : { ...p, pos: fn(p.pos) };
+export const mapPoints = (p, fn) => hasPoints(p) ? { ...p, points: p.points.map(fn) } : { ...p, pos: fn(p.pos) };
 
 export function translatePrims(prims, dx, dy, dz) {
   return prims.map(p => mapPoints(p, ([x, y, z]) => [x + dx, y + dy, z + dz]));
