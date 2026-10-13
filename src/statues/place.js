@@ -1,4 +1,5 @@
-import { stream } from '../rng.js';
+import { stream, hash32, fnv1a } from '../rng.js';
+import { POSES } from './poses.js';
 import { box, cyl, boundsOf, translatePrims, translateBoxes, rotateYPrims, rotateYBoxes } from '../shapes/ir.js';
 import { figure } from './figure.js';
 import { rollDamage, applyDamage } from './damage.js';
@@ -7,7 +8,7 @@ import { object } from './object.js';
 import { group } from './group.js';
 
 export const FAMILIES = {
-  figure: ['standing', 'seated', 'kneeling', 'reaching', 'carrying', 'reading'],
+  figure: Object.keys(POSES),
   animal: ['horse', 'ox', 'fox', 'hare', 'bear', 'heron', 'owl', 'dog'],
   object: ['urn', 'boat', 'ladder', 'bell', 'wheel', 'loom'],
   group:  ['pair', 'companion', 'child'],
@@ -41,7 +42,7 @@ export function plinth(kind, footprint, scale) {
 }
 
 export function buildStatue(inst, scale, damage = null, side = 1) {
-  const raw = FAMILY_BUILDERS[inst.family](inst.subject, scale);
+  const raw = FAMILY_BUILDERS[inst.family](inst.subject, scale, inst.variant);
   const body = applyDamage(raw, damage);
   const b = boundsOf(body.prims);
   const extent = Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]);
@@ -92,6 +93,8 @@ export function placeStatues(seedHash, hall, slots, solids = []) {
       if (used.has(key)) continue;
       used.add(key);
       inst = { family, subject, pose, plinth: rng.pick(['box', 'box', 'stepped', 'drum']) };
+      // Each figure's slight pose variation has its own hash, so it never shifts the statue stream.
+      if (family === 'figure') inst.variant = hash32(seedHash, hall.x, hall.y, hall.z, fnv1a('pose:' + slots.indexOf(slot)));
     }
     if (!inst) return null;
     let scale = Math.min(slot.maxScale, 1 + rng.next() * rng.next() * 2 * (0.5 + areaFrac));

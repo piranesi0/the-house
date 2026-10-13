@@ -18,11 +18,21 @@ function extents(p) {
     const xs = p.points.map(q => q[0]), ys = p.points.map(q => q[1]), zs = p.points.map(q => q[2]);
     return { min: [Math.min(...xs), Math.min(...ys), Math.min(...zs)], max: [Math.max(...xs), Math.max(...ys), Math.max(...zs)] };
   }
-  let half;
-  if (p.kind === 'sphere') half = [p.r, p.r, p.r];
-  else if (p.kind === 'box') half = isUpright(p.rot) ? p.size.map(s => s / 2) : Array(3).fill(Math.hypot(...p.size) / 2);
-  else { const r = Math.max(p.r1, p.r2); half = isUpright(p.rot) ? [r, p.h / 2, r] : Array(3).fill(Math.hypot(2 * r, p.h) / 2); }
-  return { min: p.pos.map((v, i) => v - half[i]), max: p.pos.map((v, i) => v + half[i]) };
+  if (p.kind === 'sphere') return { min: p.pos.map(v => v - p.r), max: p.pos.map(v => v + p.r) };
+  const r = p.kind === 'cyl' ? Math.max(p.r1, p.r2) : 0;
+  const half = p.kind === 'box' ? p.size.map(s => s / 2) : [r, p.h / 2, r];
+  if (isUpright(p.rot)) return { min: p.pos.map((v, i) => v - half[i]), max: p.pos.map((v, i) => v + half[i]) };
+  // The part's own bounding prism, its eight corners turned X, then Z, then Y.
+  const [ax, ay, az] = p.rot, out = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    let [x, y, z] = [sx * half[0], sy * half[1], sz * half[2]];
+    [y, z] = [y * Math.cos(ax) - z * Math.sin(ax), y * Math.sin(ax) + z * Math.cos(ax)];
+    [x, y] = [x * Math.cos(az) - y * Math.sin(az), x * Math.sin(az) + y * Math.cos(az)];
+    [x, z] = [x * Math.cos(ay) + z * Math.sin(ay), -x * Math.sin(ay) + z * Math.cos(ay)];
+    const c = [x, y, z];
+    for (let i = 0; i < 3; i++) { out.min[i] = Math.min(out.min[i], p.pos[i] + c[i]); out.max[i] = Math.max(out.max[i], p.pos[i] + c[i]); }
+  }
+  return out;
 }
 
 export function boundsOf(prims) {

@@ -76,3 +76,22 @@ test('statues stay inside the hall, off its walls, columns and well, and off eac
     }
   }
 });
+
+test('every placed figure carries its own pose variant, and all twelve poses turn up', () => {
+  const seen = new Set(), variants = new Set(), halls = new Set();
+  let figures = 0;
+  for (let i = 0; i < 400; i++) {
+    const x = (i * 31) % 101 - 50, z = (i * 17) % 101 - 50;
+    if (halls.has(`${x},${z}`)) continue;
+    halls.add(`${x},${z}`);
+    const hall = hallParams(seed, x, 0, z, fields), built = buildHall(hall, connsFor(seed, hall, fields));
+    for (const s of placeStatues(seed, hall, built.slots, built.boxes)) {
+      if (s.family !== 'figure') continue;
+      figures++; seen.add(s.subject);
+      assert.ok(Number.isInteger(s.variant) && s.variant >= 0, `${s.subject} has no variant`);
+      variants.add(s.variant);
+    }
+  }
+  assert.equal(seen.size, 12, `poses seen: ${[...seen].join(', ')}`);
+  assert.ok(variants.size > 0.95 * figures);
+});

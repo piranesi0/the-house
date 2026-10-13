@@ -33,3 +33,9 @@ test('translate and scale', () => {
   const [p] = translatePrims(scalePrims([box([1, 2, 3], [1, 1, 1])], 2), 1, 0, 0);
   assert.deepEqual(p.size, [2, 4, 6]); assert.deepEqual(p.pos, [3, 2, 2]);
 });
+
+test('boundsOf wraps a rotated box tightly, not with a sphere', () => {
+  const b = boundsOf([box([2, 0.2, 0.2], [0, 0, 0], [0, 0, Math.PI / 2])]);   // a 2 m bar stood on end
+  const near = (x, y) => assert.ok(Math.abs(x - y) < 1e-9, `${x} vs ${y}`);
+  near(b.min[1], -1); near(b.max[1], 1); near(b.min[0], -0.1); near(b.max[0], 0.1); near(b.max[2], 0.1);
+});
