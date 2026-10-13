@@ -1825,6 +1825,12 @@ Alex walks phase B before phase C starts.
 
 ### Task 13: Water fill and shaded mirrors
 
+> **Decision 2026-10-13 (Alex, after the phase A walk):** pools are cut out of the hall floor rather than
+> covered by an opaque `'pool'` poly, so the swaying mirror statues below `floorY` show through as in v0.
+> The opaque floor in phase A hides them (final-review finding I-3). Re-plan this task around the cut-out
+> before executing it: the floor needs the pool polygon removed (`poly` has no holes, so clip the floor into
+> pieces as `aroundWell` does), and the water fill stays translucent over the opening.
+
 **Files:**
 - Modify: `src/shapes/index.js` (pool floor poly), `src/material.js` (add `waterMaterial`), `src/water.js`, `src/main.js`
 - Test: `test/floors.test.mjs`

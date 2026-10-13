@@ -2,6 +2,8 @@
 
 **Status:** design approved in conversation 2026-10-13; reviewed against the source 2026-10-13 and
 amended (per-vertex mood, floor fills, window order, budgets). Ready for planning.
+Phase A shipped 2026-10-13: fps 180 (locked to a 180 Hz display), worst frame 7 ms, worst hall
+build 15 ms on Alex's machine; about 19 draw calls and 38k triangles in view (in-page count).
 **Owner:** Alex, building in Claude Code sessions. No Aleph agents.
 **Amends:** `2026-10-13-the-house-design.md` §6 ("No fills, no textures"). Surfaces are now shaded;
 the line work stays on top. Everything else in the v0 spec stands.
