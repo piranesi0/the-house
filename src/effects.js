@@ -12,9 +12,9 @@ export function buildEffects(hall, out) {
   const pos = [], uv = [], alpha = [], tint = [];
   const rel = ([x, y, z]) => [x - hall.cx, y - hall.floorY, z - hall.cz];
   // A quad from four corners (a b c d in order round the quad) with per-corner alpha.
-  const quad = (a, b, c, d, al, colour, uvs = [[0, 0], [1, 0], [1, 1], [0, 1]]) => {
+  const quad = (a, b, c, d, al, colour) => {
     const corners = [a, b, c, d].map(rel), order = [0, 1, 2, 0, 2, 3];
-    for (const i of order) { pos.push(...corners[i]); uv.push(...uvs[i]); alpha.push(al[i]); tint.push(...colour); }
+    for (const i of order) { pos.push(...corners[i]); uv.push(...[[0, 0], [1, 0], [1, 1], [0, 1]][i]); alpha.push(al[i]); tint.push(...colour); }
   };
   const glowA = 0.25 + 0.5 * hall.light;
   for (const w of out.windows) {

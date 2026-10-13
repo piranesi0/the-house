@@ -151,6 +151,6 @@ export function effectsMaterial({ fields = [0.5, 0, 0] } = {}) {
     vertexShader: EFFECTS_VERT, fragmentShader: EFFECTS_FRAG,
     uniforms: { ...stopUniforms(), uFields: { value: v3(fields) } },
     transparent: true, premultipliedAlpha: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    side: THREE.DoubleSide, clipping: true,
+    side: THREE.DoubleSide, clipping: true, forceSinglePass: true,
   });
 }
