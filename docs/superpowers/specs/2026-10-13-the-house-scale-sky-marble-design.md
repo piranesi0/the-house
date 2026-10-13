@@ -80,8 +80,9 @@ halls are still built, queued as today.
   the view rotation only, so no world-scale position is formed). A 40 m vault overhead then fogs
   like something 13 m away and stays visible; the horizon fogs exactly as before. Height fog is
   unchanged.
-- Lines and the water grid keep three's built-in distance fog (true distance), so high line work
-  fades a little sooner than the stone it draws.
+- Lines, the water grid and birds keep three's built-in fog, but its distance is patched once at
+  startup (`src/fogchunk.js`) to the same measure, so vault line work stays drawn wherever the stone
+  does. Built-in fog still eases with smoothstep where the stone fades linearly.
 - The camera's far plane stays at 200 m.
 
 **Determinism:** same seed, same House. Old links open at the same cell, but the hall there is
