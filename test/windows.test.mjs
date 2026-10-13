@@ -8,7 +8,7 @@ import { buildHall } from '../src/shapes/index.js';
 import { placeStatues } from '../src/statues/place.js';
 import { footprint } from '../src/shapes/footprint.js';
 import { WELL } from '../src/shapes/stairwell.js';
-import { footprintEdges, windowsFor, moodBand, PATCH } from '../src/windows.js';
+import { footprintEdges, windowsFor, moodBand, PATCH, HEIGHT_SHARE, ELEVATION } from '../src/windows.js';
 
 const seed = fnv1a('ravens'), fields = makeFields(seed);
 const RANGE = { luminous: [2, 4], dusk: [1, 2], chiaroscuro: [1, 2] };
@@ -75,19 +75,42 @@ test('no two windows on the window wall overlap (D1)', () => {
   assert.ok(pairs > 500, `only ${pairs} window pairs checked`);
 });
 
-test('a 6 m square hall with 6 m arches puts its windows on the wall segments beside the opening (D3)', () => {
-  const { hall, conns, statues } = build(0, 0, { ceiling: 6, shape: 'square' });
-  for (const side of ['n', 'e', 's', 'w']) conns[side] = { ...conns[side], type: 'arch', width: 4, height: 6 };
+test('an 18 m square hall with 12 m arches puts its windows on the wall segments beside the opening (D3)', () => {
+  // The lowest ceiling over the tallest arch: a window 30% of 18 m tall, its top within 1.5 m of
+  // the ceiling, reaches down to about 11 m, below the arch's 12 m head, so it must sit beside it.
+  const { hall, conns, statues } = build(0, 0, { ceiling: 18, shape: 'square' });
+  for (const side of ['n', 'e', 's', 'w']) conns[side] = { ...conns[side], type: 'arch', width: 4, height: 12 };
   const out = windowsFor(seed, hall, conns, statues);
   const e = out.wall;
   assert.ok(e.doorway, 'a square hall\'s window wall carries a doorway');
-  assert.equal(e.doorway.height, 6);
+  assert.equal(e.doorway.height, 12);
   assert.ok(out.windows.length >= 1);
+  assert.ok(out.windows.some(w => w.c[1] - w.h / 2 < hall.floorY + 12), 'no window reaches below the arch head, so the case is not exercised');
   for (const w of out.windows) {
     const s = along(e, w);
-    assert.ok(s + w.w / 2 <= e.len / 2 - 2 + 1e-9 || s - w.w / 2 >= e.len / 2 + 2 - 1e-9, 'window over the 6 m arch');
-    assert.ok(w.c[1] + w.h / 2 <= hall.floorY + 6 && w.c[1] - w.h / 2 > hall.floorY + 0.5);
+    assert.ok(s + w.w / 2 <= e.len / 2 - 2 + 1e-9 || s - w.w / 2 >= e.len / 2 + 2 - 1e-9, 'window over the 12 m arch');
+    assert.ok(w.c[1] + w.h / 2 <= hall.floorY + 18 && w.c[1] - w.h / 2 > hall.floorY + 0.5);
   }
+});
+
+test('windows are about 30% of the ceiling tall, and the key light falls at 50 to 75 degrees or steeper', () => {
+  const elevs = [];
+  for (let x = -15; x <= 15; x++) for (let z = -15; z <= 15; z++) {
+    const { hall, conns, statues } = build(x, z);
+    const out = windowsFor(seed, hall, conns, statues);
+    for (const w of out.windows) {
+      assert.ok(w.h >= HEIGHT_SHARE[0] * hall.ceiling - 1e-9 && w.h <= HEIGHT_SHARE[1] * hall.ceiling + 1e-9, `window ${w.h.toFixed(2)} m in a ${hall.ceiling.toFixed(1)} m hall`);
+      assert.ok(w.h >= 4.8 && w.h <= 13.2);
+    }
+    const e = Math.asin(-out.keyDir[1]) * 180 / Math.PI;
+    assert.ok(e >= ELEVATION[0] - 1e-9 && e < 90, `key elevation ${e.toFixed(1)}`);
+    elevs.push(e);
+  }
+  // The landing rule only ever steepens the light, so most halls keep their nominal elevation and
+  // the whole nominal range turns up.
+  const nominal = elevs.filter(e => e <= ELEVATION[1] + 1e-9);
+  assert.ok(nominal.length > 0.5 * elevs.length, `only ${nominal.length} of ${elevs.length} halls at their nominal elevation`);
+  assert.ok(Math.min(...nominal) < 53 && Math.max(...nominal) > 72, `nominal elevations span ${Math.min(...nominal).toFixed(1)} to ${Math.max(...nominal).toFixed(1)}`);
 });
 
 test('every shaft lands inside the hall; chiaroscuro shafts land on a statue when one is in front', () => {

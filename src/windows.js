@@ -9,6 +9,9 @@ const DEG = Math.PI / 180;
 const COUNT = { luminous: [2, 4], dusk: [1, 2], chiaroscuro: [1, 2] };
 const STRENGTH = { luminous: 0.35, dusk: 0.15, chiaroscuro: 0.9 };
 const EDGE = 0.3, DOOR_PAD = 0.2, GAP = 0.3;
+// Window height as a share of the ceiling, and the nominal key-light elevation in degrees.
+export const HEIGHT_SHARE = [0.27, 0.33];
+export const ELEVATION = [50, 75];
 
 // Half-size of a shaft's landing patch per metre of shaft width: effects.js draws a square of
 // half-size PATCH * shaft.w around `to`, square to the shaft's travel. windowsFor keeps it inside.
@@ -95,7 +98,7 @@ export function windowsFor(seedHash, hall, conns, statues) {
   for (let k = 0; k < count; k++) {
     let placed = null;
     for (let tries = 0; tries < 12 && !placed; tries++) {
-      const h = Math.min(rng.range(1.2, 2.5), hall.ceiling * 0.35), w = rng.range(0.8, 2.0);
+      const h = hall.ceiling * rng.range(...HEIGHT_SHARE), w = rng.range(0.8, 2.0);
       const drop = rng.range(0.3, 1.5), cy = top - drop - h / 2;
       if (wall.len < w + 2 * EDGE) break;
       const s = rng.range(EDGE + w / 2, wall.len - EDGE - w / 2);
@@ -117,15 +120,15 @@ export function windowsFor(seedHash, hall, conns, statues) {
       spans.forEach(([a, b], i) => { if ((b - a) / (share[i] + 1) > (spans[best][1] - spans[best][0]) / (share[best] + 1)) best = i; });
       share[best]++;
     }
-    const h = Math.min(1.5, hall.ceiling * 0.35), cy = top - 0.75 - h / 2;
+    const h = hall.ceiling * 0.3, cy = top - 0.75 - h / 2;
     windows = [];
     spans.forEach(([a, b], i) => {
       const n = share[i], cellLen = (b - a - GAP * (n - 1)) / n, w = Math.min(1.2, cellLen);
       for (let j = 0; j < n; j++) windows.push(at(a + j * (cellLen + GAP) + cellLen / 2, w, h, cy));
     });
   }
-  // Key light: along the wall's inward normal with a small jitter, nominally 40 to 60 degrees down.
-  const jitter = rng.range(-8, 8) * DEG, elev0 = rng.range(40, 60) * DEG;
+  // Key light: along the wall's inward normal with a small jitter, nominally 50 to 75 degrees down.
+  const jitter = rng.range(-8, 8) * DEG, elev0 = rng.range(...ELEVATION) * DEG;
   const cosJ = Math.cos(jitter), sinJ = Math.sin(jitter);
   const kn = [wall.n[0] * cosJ - wall.n[1] * sinJ, wall.n[0] * sinJ + wall.n[1] * cosJ];
   const well = hall.isStair

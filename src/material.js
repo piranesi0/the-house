@@ -43,9 +43,15 @@ export const MOOD_GLSL = /* glsl */`
     m.haze = mix(m.haze, mix(m.haze, uWater.yzw, 0.5), w);
     return m;
   }
-  // Distance fog from 2 m to fogFar, plus height fog in the bottom 3 m that needs some distance to build.
-  float fogAmount(Mood m, float dist, float h) {
-    float distFog = clamp((dist - 2.0) / (m.fogFar - 2.0), 0.0, 1.0);
+  // Distance fog from 2 m to fogFar, plus height fog in the bottom 3 m that needs some distance to
+  // build. view: the fragment's view-space position. Distance fog measures the horizontal distance
+  // plus a third of the vertical, so a 40 m vault stays visible while the horizon fogs as before;
+  // the offset is turned to world orientation by the view rotation alone (a row-vector product is
+  // the transpose), so no world position is formed. Height fog keeps the true distance.
+  float fogAmount(Mood m, vec3 view, float h) {
+    vec3 off = (vec4(view, 0.0) * viewMatrix).xyz;
+    float dist = length(view), flatDist = length(off.xz) + abs(off.y) / 3.0;
+    float distFog = clamp((flatDist - 2.0) / (m.fogFar - 2.0), 0.0, 1.0);
     float heightFog = m.heightFog * clamp(1.0 - h / 3.0, 0.0, 1.0) * clamp(dist / 8.0, 0.0, 1.0);
     return max(distFog, heightFog);
   }
@@ -97,8 +103,7 @@ const SURFACE_FRAG = /* glsl */`
     float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * step(1.5, vKind);
     color += m.sky * sheen;
     color *= uDim;
-    float dist = length(vV);
-    color = mix(color, m.haze, fogAmount(m, dist, h));
+    color = mix(color, m.haze, fogAmount(m, vV, h));
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -141,7 +146,7 @@ const EFFECTS_FRAG = /* glsl */`
     Mood m = moodFor(uFields);
     // Soft edges across the quad; uv.x runs across a shaft or glow, uv.y along it.
     float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(0.0, 0.35, 1.0 - vUv.x);
-    float a = vAlpha * edge * (1.0 - fogAmount(m, length(vV), vH));
+    float a = vAlpha * edge * (1.0 - fogAmount(m, vV, vH));
     // Premultiplied: the material sets premultipliedAlpha, so additive blending is ONE, ONE.
     gl_FragColor = vec4(vTint * a, a);
   }
