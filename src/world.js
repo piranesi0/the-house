@@ -3,6 +3,7 @@ import { connsFor } from './connectors.js';
 import { buildHall } from './shapes/index.js';
 import { buildConnector } from './shapes/connector.js';
 import { placeStatues } from './statues/place.js';
+import { placeColossus } from './statues/colossus.js';
 import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
@@ -51,6 +52,10 @@ export class World {
     const built = buildHall(hall, conns, opts);
     const prims = [...built.prims], boxes = [...built.boxes], floors = [...built.floors];
     const statues = placeStatues(this.seedHash, hall, built.slots, built.boxes);
+    // A colossus goes in after the ordinary statues and around them, at y = 0 only (the vista halls
+    // above and below stair halls have holes and no ground to stand on); null in most halls.
+    const giant = y === 0 ? placeColossus(this.seedHash, hall, built.boxes, statues) : null;
+    if (giant) statues.push(giant);
     for (const s of statues) { prims.push(...s.prims.map(p => ({ ...p, tag: 'statue' }))); boxes.push(...s.boxes); }
     if (y === 0) for (const c of [conns.e, conns.s]) {
       const b = buildConnector(c); prims.push(...b.prims); boxes.push(...b.boxes); floors.push(...b.floors);

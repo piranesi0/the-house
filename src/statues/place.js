@@ -57,7 +57,7 @@ export function buildStatue(inst, scale, damage = null, side = 1) {
 }
 
 // Doorway approach zones at the widest door (4 m) plus 0.5 m, 2 m deep into the hall.
-function doorZones({ cx, cz, hx, hz, wall }) {
+export function doorZones({ cx, cz, hx, hz, wall }) {
   const w = 2.5;
   return [
     { x0: cx - w, x1: cx + w, z0: cz - hz - wall, z1: cz - hz + 2 },
@@ -70,19 +70,25 @@ const blocksDoor = (boxes, zones) => boxes.some(b => zones.some(r => b.min[0] < 
 const overlaps = (a, b) => a.min[0] < b.max[0] - 1e-6 && a.max[0] > b.min[0] + 1e-6 && a.min[2] < b.max[2] - 1e-6 && a.max[2] > b.min[2] + 1e-6
   && a.min[1] < b.max[1] && a.max[1] > b.min[1];
 
-// solids: the hall's own collision boxes (walls, columns, stairwell), which no statue may enter.
-export function placeStatues(seedHash, hall, slots, solids = []) {
+// The fit check every statue passes: clear of the doorway zones, inside the hall's box, and off
+// the hall's solids and every statue in `placed` (read when called, so it may still be growing).
+export function fitter(hall, solids, placed) {
   const zones = doorZones(hall);
   const { cx, cz, hx, hz } = hall;
-  const fits = (boxes) => !blocksDoor(boxes, zones)
+  return (boxes) => !blocksDoor(boxes, zones)
     && boxes.every(b => b.min[0] >= cx - hx && b.max[0] <= cx + hx && b.min[2] >= cz - hz && b.max[2] <= cz + hz)
-    && !boxes.some(b => solids.some(w => overlaps(b, w)) || out.some(s => s.boxes.some(o => overlaps(b, o))));
+    && !boxes.some(b => solids.some(w => overlaps(b, w)) || placed.some(s => s.boxes.some(o => overlaps(b, o))));
+}
+
+// solids: the hall's own collision boxes (walls, columns, stairwell), which no statue may enter.
+export function placeStatues(seedHash, hall, slots, solids = []) {
+  const out = [], fits = fitter(hall, solids, out);
   const rng = stream(seedHash, hall.x, hall.y, hall.z, 'statues');
   const areaFrac = Math.min(1, (4 * hall.hx * hall.hz) / (22.8 * 22.8));
   const count = Math.min(slots.length, Math.max(2, Math.round(2 + 12 * areaFrac)));
   const order = [...slots];
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng.next() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-  const used = new Set(), out = [];
+  const used = new Set();
   const attempt = (slot) => {
     let inst = null;
     for (let tries = 0; tries < 20 && !inst; tries++) {
