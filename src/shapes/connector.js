@@ -12,8 +12,9 @@ export function buildConnector(conn) {
   const floorAlong = (p0, p1, y0, y1) => {
     if (p1 - p0 <= 0.01) return;
     prims.push(poly([P(p0, y0, centre - w / 2), P(p1, y1, centre - w / 2), P(p1, y1, centre + w / 2), P(p0, y0, centre + w / 2)], 'floor'));
-    // Polys draw no lines: keep the floor's long side edges as the wireframe.
-    prims.push(segs([P(p0, y0, centre - w / 2), P(p1, y1, centre - w / 2), P(p0, y0, centre + w / 2), P(p1, y1, centre + w / 2)]));
+    // Polys draw no lines: keep the floor's outline (side edges and both ends, as v0's floor box drew).
+    prims.push(segs([P(p0, y0, centre - w / 2), P(p1, y1, centre - w / 2), P(p0, y0, centre + w / 2), P(p1, y1, centre + w / 2),
+      P(p0, y0, centre - w / 2), P(p0, y0, centre + w / 2), P(p1, y1, centre - w / 2), P(p1, y1, centre + w / 2)]));
   };
   const corridor = (p0, p1) => {
     const len = p1 - p0, mid = (p0 + p1) / 2;
