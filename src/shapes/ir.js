@@ -34,7 +34,7 @@ export function boundsOf(prims) {
   return out;
 }
 
-const mapPoints = (p, fn) => (p.kind === 'lines' || p.kind === 'segs') ? { ...p, points: p.points.map(fn) } : { ...p, pos: fn(p.pos) };
+export const mapPoints = (p, fn) => (p.kind === 'lines' || p.kind === 'segs') ? { ...p, points: p.points.map(fn) } : { ...p, pos: fn(p.pos) };
 
 export function translatePrims(prims, dx, dy, dz) {
   return prims.map(p => mapPoints(p, ([x, y, z]) => [x + dx, y + dy, z + dz]));

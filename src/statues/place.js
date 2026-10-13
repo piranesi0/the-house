@@ -1,6 +1,7 @@
 import { stream } from '../rng.js';
 import { box, cyl, boundsOf, translatePrims, translateBoxes, rotateYPrims, rotateYBoxes } from '../shapes/ir.js';
 import { figure } from './figure.js';
+import { rollDamage, applyDamage } from './damage.js';
 
 export const FAMILIES = { figure: ['standing', 'seated', 'kneeling', 'reaching', 'carrying', 'reading'] };
 export const FAMILY_BUILDERS = { figure: (subject, scale) => figure(subject, scale) };
@@ -31,18 +32,35 @@ export function plinth(kind, footprint, scale) {
   };
 }
 
-export function buildStatue(inst, scale) {
-  const body = FAMILY_BUILDERS[inst.family](inst.subject, scale);
+export function buildStatue(inst, scale, damage = null, side = 1) {
+  const raw = FAMILY_BUILDERS[inst.family](inst.subject, scale);
+  const body = applyDamage(raw, damage);
   const b = boundsOf(body.prims);
-  const foot = Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]) + 0.3;
+  const extent = Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]);
+  const foot = (body.fallen ? 1.1 * scale : extent) + 0.3;
   const base = plinth(inst.plinth, foot, scale);
+  const dx = body.fallen ? side * (foot / 2 + extent / 2 + 0.2) : 0;
+  const dy = body.fallen ? 0 : base.top;
   return {
-    prims: [...base.prims, ...translatePrims(body.prims, 0, base.top, 0)],
-    boxes: [...base.boxes, ...translateBoxes(body.boxes, 0, base.top, 0)],
+    prims: [...base.prims, ...translatePrims(body.prims, dx, dy, 0)],
+    boxes: [...base.boxes, ...translateBoxes(body.boxes, dx, dy, 0)],
   };
 }
 
+// Doorway approach zones at the widest door (4 m) plus 0.5 m, 2 m deep into the hall.
+function doorZones({ cx, cz, hx, hz, wall }) {
+  const w = 2.5;
+  return [
+    { x0: cx - w, x1: cx + w, z0: cz - hz - wall, z1: cz - hz + 2 },
+    { x0: cx - w, x1: cx + w, z0: cz + hz - 2, z1: cz + hz + wall },
+    { x0: cx + hx - 2, x1: cx + hx + wall, z0: cz - w, z1: cz + w },
+    { x0: cx - hx - wall, x1: cx - hx + 2, z0: cz - w, z1: cz + w },
+  ];
+}
+const blocksDoor = (boxes, zones) => boxes.some(b => zones.some(r => b.min[0] < r.x1 && b.max[0] > r.x0 && b.min[2] < r.z1 && b.max[2] > r.z0));
+
 export function placeStatues(seedHash, hall, slots) {
+  const zones = doorZones(hall);
   const rng = stream(seedHash, hall.x, hall.y, hall.z, 'statues');
   const areaFrac = Math.min(1, (4 * hall.hx * hall.hz) / (22.8 * 22.8));
   const count = Math.min(slots.length, Math.max(2, Math.round(2 + 12 * areaFrac)));
@@ -63,12 +81,20 @@ export function placeStatues(seedHash, hall, slots) {
     }
     if (!inst) continue;
     const scale = Math.min(slot.maxScale, 1 + rng.next() * rng.next() * 2 * (0.5 + areaFrac));
-    const built = buildStatue(inst, scale);
-    out.push({
-      slot, ...inst, scale,
-      prims: translatePrims(rotateYPrims(built.prims, slot.facing), slot.x, hall.floorY, slot.z),
-      boxes: translateBoxes(rotateYBoxes(built.boxes, slot.facing), slot.x, hall.floorY, slot.z),
-    });
+    let damage = rollDamage(rng, hall.decay);
+    const place = (side) => {
+      const built = buildStatue(inst, scale, damage, side);
+      return {
+        prims: translatePrims(rotateYPrims(built.prims, slot.facing), slot.x, hall.floorY, slot.z),
+        boxes: translateBoxes(rotateYBoxes(built.boxes, slot.facing), slot.x, hall.floorY, slot.z),
+      };
+    };
+    let placed = place(1);
+    // A fallen statue lies beside its plinth on whichever side keeps the doorways clear;
+    // if neither does, it stays standing.
+    if (damage.fallen && blocksDoor(placed.boxes, zones)) placed = place(-1);
+    if (damage.fallen && blocksDoor(placed.boxes, zones)) { damage = { ...damage, fallen: false }; placed = place(1); }
+    out.push({ slot, ...inst, scale, damage, ...placed });
   }
   return out;
 }
