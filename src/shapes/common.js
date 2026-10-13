@@ -1,8 +1,14 @@
-import { box, cyl, lines, aabbOfBox } from './ir.js';
+import { box, cyl, lines, poly, aabbOfBox } from './ir.js';
 
 export const facingToward = (fx, fz) => Math.atan2(-fx, -fz);
 export const floorPatch = (x0, x1, z0, z1, axis, y0, y1) => ({ x0, x1, z0, z1, axis, y0, y1 });
-export const slab = (cx, y, cz, hx, hz) => box([2 * hx, 0.02, 2 * hz], [cx, y, cz]);
+export const rectPoly = (cx, y, cz, hx, hz, name, down = false) =>
+  poly([[cx - hx, y, cz - hz], [cx + hx, y, cz - hz], [cx + hx, y, cz + hz], [cx - hx, y, cz + hz]], name, down);
+export function octagonPoly(cx, y, cz, ap, name, down = false) {
+  const R = ap / Math.cos(Math.PI / 8), pts = [];
+  for (let k = 0; k < 8; k++) { const a = Math.PI / 8 + k * Math.PI / 4; pts.push([cx + R * Math.cos(a), y, cz + R * Math.sin(a)]); }
+  return poly(pts, name, down);
+}
 
 function edgeInfo(verts, i) {
   const n = verts.length, a = verts[i], b = verts[(i + 1) % n];

@@ -1,10 +1,10 @@
-import { octagonWalls, octagonSlab, facingToward } from './common.js';
+import { octagonWalls, octagonSlab, octagonPoly, facingToward } from './common.js';
 
 export function buildOctagon(hall, conns, opts = {}) {
   const { cx, cz, hx: ap, ceiling, wall: t, floorY: f } = hall;
   const { prims, boxes } = octagonWalls(cx, cz, ap, ceiling, t, f, { n: conns.n, s: conns.s, e: conns.e, w: conns.w });
-  prims.push(octagonSlab(cx, f, cz, ap));
-  if (opts.ceiling !== false) prims.push(octagonSlab(cx, f + ceiling, cz, ap));
+  prims.push(octagonSlab(cx, f, cz, ap), octagonPoly(cx, f, cz, ap, 'floor'));
+  if (opts.ceiling !== false) prims.push(octagonSlab(cx, f + ceiling, cz, ap), octagonPoly(cx, f + ceiling, cz, ap, 'ceiling', true));
   const slots = [];
   // In a small octagon the diagonal niches crowd the doorways; pull them in and keep them life-size.
   const small = ap < 7.6;

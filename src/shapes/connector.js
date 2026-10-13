@@ -1,5 +1,5 @@
 import { box, segs, aabbOfBox } from './ir.js';
-import { octagonWalls, octagonSlab, floorPatch } from './common.js';
+import { octagonWalls, octagonSlab, octagonPoly, floorPatch } from './common.js';
 import { CELL } from '../hall.js';
 
 export function buildConnector(conn) {
@@ -24,7 +24,7 @@ export function buildConnector(conn) {
     corridor(faceA, mid - r); corridor(mid + r, faceB);
     const [ox, oz] = axis === 'x' ? [mid, centre] : [centre, mid];
     const oct = octagonWalls(ox, oz, r, h, 0.5, f, axis === 'x' ? ['w', 'e'] : ['n', 's']);
-    prims.push(...oct.prims, octagonSlab(ox, f, oz, r), octagonSlab(ox, f + h, oz, r));
+    prims.push(...oct.prims, octagonSlab(ox, f, oz, r), octagonSlab(ox, f + h, oz, r), octagonPoly(ox, f, oz, r, 'vestibule'), octagonPoly(ox, f + h, oz, r, 'vestibule', true));
     boxes.push(...oct.boxes);
   } else {
     corridor(faceA, faceB);
