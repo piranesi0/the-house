@@ -10,7 +10,7 @@ import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
 import { MARBLES, marbleFor, footprintLocal } from './marble.js';
 import { windowsFor } from './windows.js';
-import { reflectionPrims, SHEET_DROP } from './reflect.js';
+import { reflectionPrims, MIRROR_Y } from './reflect.js';
 import { buildEffects, buildPortals } from './effects.js';
 import { colorsFor } from './palette.js';
 import { planLoads } from './schedule.js';
@@ -73,11 +73,11 @@ export class World {
     // Its floor pattern is the hall's own and follows its own outline.
     const stone = shaded ? marbleFor(this.seedHash, hall, this.fields) : null;
     // A shaded pool's mirror is built into this hall's own two meshes (build.js): what stands in the
-    // pool and the vault over it, turned over about the water line and cut at the water sheet, seen
-    // through the pool's opening in the floor. look=lines keeps v0's separate mirror (water.js).
-    const pool = shaded && hall.pool ? { depth: hall.depth, sheet: hall.depth - SHEET_DROP } : null;
-    const mirror = pool ? { ...pool, prims: translatePrims(reflectionPrims(hall, statues, prims, { shaded: true }), -hall.cx, -hall.floorY, -hall.cz) } : null;
-    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[stone.marble], pattern: stone.pattern, footprint: footprintLocal(hall), ...pool }) : null;
+    // pool, the hall's own walls and columns (not its connectors) and the vault, turned over about
+    // the floor and cut there, seen through the pool's opening in it. look=lines keeps v0's separate
+    // mirror (water.js).
+    const mirror = shaded && hall.pool ? { plane: MIRROR_Y, prims: translatePrims(reflectionPrims(hall, statues, built.prims, { shaded: true }), -hall.cx, -hall.floorY, -hall.cz) } : null;
+    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[stone.marble], pattern: stone.pattern, footprint: footprintLocal(hall) }) : null;
     const surface = shaded ? { material, fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface, mirror });
     if (win) for (const mesh of [buildEffects(hall, win), buildPortals(hall, win)]) if (mesh) group.add(mesh);

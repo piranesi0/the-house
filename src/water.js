@@ -3,13 +3,13 @@ import { pointInPolygon } from './hall.js';
 import { colorsFor, lerpHex } from './palette.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { waterMaterial } from './material.js';
-import { reflectionPrims, SHEET_DROP } from './reflect.js';
+import { reflectionPrims, SHEET_Y } from './reflect.js';
 import { translatePrims, poly } from './shapes/ir.js';
 import { polyPositions } from './shapes/poly.js';
 
 // Pools. look=lines keeps v0: a rippling line grid at the water line and a swaying line mirror of
-// the statues standing in the pool, per pool. The shaded look draws every loaded pool's water sheet
-// in one mesh (waterMaterial, the grid drawn in its shader), rebuilt on the next update after a pool
+// the statues standing in the pool, per pool. The shaded look draws every loaded pool's water sheet,
+// flush on its floor (reflect.js), in one mesh (waterMaterial, the grid drawn in its shader), rebuilt on the next update after a pool
 // comes or goes; each pool's mirror is part of its hall's own meshes (world.js, build.js), seen
 // through the pool's opening in the floor. So the shaded pools in view cost one draw call in all.
 export class Water {
@@ -71,12 +71,12 @@ export class Water {
     const [ox, oz] = [halls[0].cx, halls[0].cz];
     const pos = [], fields = [], h = [], grid = [];
     for (const hall of halls) {
-      const y = hall.floorY + hall.depth - SHEET_DROP;
+      const y = hall.floorY + SHEET_Y;
       const tri = polyPositions(poly(hall.pool.map(([x, z]) => [hall.cx - ox + x, y, hall.cz - oz + z]), 'water'));
       // The pool's v0 grid colour as raw sRGB, as the shader writes it.
       const hex = lerpHex(colorsFor(hall.light).line, 0x7fa0c0, 0.5), raw = [hex >> 16 & 255, hex >> 8 & 255, hex & 255].map(v => v / 255);
       pos.push(...tri);
-      for (let i = 0; i < tri.length / 3; i++) { fields.push(hall.light, hall.water, hall.decay); h.push(hall.depth - SHEET_DROP); grid.push(...raw); }
+      for (let i = 0; i < tri.length / 3; i++) { fields.push(hall.light, hall.water, hall.decay); h.push(SHEET_Y); grid.push(...raw); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

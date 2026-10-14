@@ -227,25 +227,24 @@ const SURFACE_FRAG = /* glsl */`
   ${MARBLE_GLSL}
   uniform vec3 uKeyDir;        // direction the light travels, normalised
   uniform float uCeiling, uDim;
-  uniform float uDepth, uSheet;   // the pool's water line and water sheet, above the hall floor
   varying vec3 vN, vNV, vV, vFields, vP;
   varying float vH, vKind;
   #include <clipping_planes_pars_fragment>
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(vFields);
-    // A pool's mirror (KIND.mirrored + the part's own kind, build.js) hangs below the water line:
-    // its vertices are the originals turned over about it. It is shaded as the original part (the
-    // height above the floor, the marble's coordinates and the normal turned back for the light, so
-    // a statue's underside stays dark and the reflected vault takes the bounce), dimmer, and only
-    // below the water sheet: parts standing in the water would otherwise mirror up out of it.
+    // A pool's mirror (KIND.mirrored + the part's own kind, build.js) hangs below the hall floor:
+    // its vertices are the originals turned over about it (y = 0, reflect.js). It is shaded as the
+    // original part (the height above the floor, the marble's coordinates and the normal turned back
+    // for the light, so a statue's underside stays dark and the reflected vault takes the bounce),
+    // dimmer, and cut at the floor, so nothing mirrored overlaps what stands in the water.
     float mirrored = step(${KIND.mirrored - 0.5}, vKind), kd = vKind - ${KIND.mirrored}.0 * mirrored;
     // Double-sided: a floor or ramp seen from below is lit as its underside.
     float facing = gl_FrontFacing ? 1.0 : -1.0;
     vec3 n = normalize(vN) * facing;
     n.y *= 1.0 - 2.0 * mirrored;
-    float h = mix(vH, 2.0 * uDepth - vH, mirrored);
-    vec3 p = vec3(vP.x, mix(vP.y, 2.0 * uDepth - vP.y, mirrored), vP.z);
+    float h = mix(vH, -vH, mirrored);
+    vec3 p = vec3(vP.x, mix(vP.y, -vP.y, mirrored), vP.z);
     // Bounded kind tests, so a later kind cannot be mistaken for a pool.
     float isStatue = step(0.5, kd) * step(kd, 1.5), isPool = step(1.5, kd) * step(kd, 2.5);
     float isFloor = step(2.5, kd) * step(kd, 3.5);
@@ -253,7 +252,7 @@ const SURFACE_FRAG = /* glsl */`
     // part the derivatives of p, which runs y the other way.
     mDx = dFdx(vP); mDy = dFdy(vP);
     mDx.y *= 1.0 - 2.0 * mirrored; mDy.y *= 1.0 - 2.0 * mirrored;
-    if (mirrored > 0.5 && vH > uSheet) discard;
+    if (mirrored > 0.5 && vH > 0.0) discard;
     // Veins calm between 10 and 15 m of the flattened distance the fog uses (horizontal plus a third
     // of the vertical, turned to world orientation by the view rotation), so vaults overhead keep
     // theirs; fainter on statues. Past 15 m they are skipped.
@@ -283,9 +282,8 @@ const SURFACE_FRAG = /* glsl */`
   }
 `;
 
-// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z;
-// depth, sheet: the hall's water line and water sheet above its floor (a pool hall's mirror).
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [], depth = 0, sheet = 0 } = {}) {
+// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z.
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [] } = {}) {
   const n = footprint.length / 2;
   const foot = Array.from({ length: MAX_FOOTPRINT }, (_, i) => new THREE.Vector2(footprint[2 * i] ?? 0, footprint[2 * i + 1] ?? 0));
   // Inscribed radius: the least distance from the hall centre to any footprint edge, so the medallion
@@ -302,7 +300,7 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
       uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength },
       uInlayA: { value: v3(marble.inlay[0]) }, uInlayB: { value: v3(marble.inlay[1]) }, uPattern: { value: PATTERNS.indexOf(pattern) },
-      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR }, uDepth: { value: depth }, uSheet: { value: sheet } },
+      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }

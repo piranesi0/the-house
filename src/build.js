@@ -149,20 +149,20 @@ function addFieldAttributes(g, kind, fields, offset) {
   g.setAttribute('kind', new THREE.BufferAttribute(k, 1));
 }
 
-// A pool's mirror in the hall's own meshes: each part's lines and solid turned over about the water
-// line (reflect.js), the lines cut at the sheet (the solids are cut in the shader). No draw call of
-// its own. mirror = { prims, depth, sheet }, hall-relative like the hall's prims.
-function mirroredLines(p, { depth, sheet }) {
+// A pool's mirror in the hall's own meshes: each part's lines and solid turned over about the
+// mirror plane (reflect.js), the lines cut at it (the solids are cut in the shader). No draw call
+// of its own. mirror = { prims, plane }, hall-relative like the hall's prims.
+function mirroredLines(p, { plane }) {
   const g = primGeometry(p);
   if (!g) return null;
-  const pos = mirrorSegments(g.attributes.position.array, depth, sheet);
+  const pos = mirrorSegments(g.attributes.position.array, plane, plane);
   g.dispose();
   return pos.length ? geometryOf(pos) : null;
 }
-function mirroredSolid(p, { depth }) {
+function mirroredSolid(p, { plane }) {
   const g = primSolid(p);
   if (!g) return null;
-  const m = geometryOf(mirrorTriangles(g.attributes.position.array, depth));
+  const m = geometryOf(mirrorTriangles(g.attributes.position.array, plane));
   g.dispose();
   m.computeVertexNormals();
   return m;
