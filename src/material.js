@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { STOPS, WATER, DECAY } from './mood.js';
 import { SKY_GLSL, SKY_UNIFORMS } from './skydome.js';
+import { MARBLES } from './marble.js';
 
 export const KIND = { arch: 0, statue: 1, pool: 2 };
 
@@ -62,8 +63,9 @@ const SURFACE_VERT = /* glsl */`
   attribute vec3 fields;
   attribute float kind;
   // vN: world-oriented normal (the key light is a world direction); vNV: view-space normal and vV:
-  // view-space position, for the sheen and fog; vH: height above the hall floor.
-  varying vec3 vN, vNV, vV, vFields;
+  // view-space position, for the sheen and fog; vH: height above the hall floor; vP: hall-relative
+  // position, the marble's coordinates (each hall is its own block of stone).
+  varying vec3 vN, vNV, vV, vFields, vP;
   varying float vH, vKind;
   #include <clipping_planes_pars_vertex>
   void main() {
@@ -71,7 +73,7 @@ const SURFACE_VERT = /* glsl */`
     // the CPU in float64) keeps far-from-origin halls precise, and position.y is the height above
     // the floor. Nothing here touches world coordinates.
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vV = mvPosition.xyz; vH = position.y;
+    vV = mvPosition.xyz; vH = position.y; vP = position;
     vN = normalize(mat3(modelMatrix) * normal); vNV = normalize(normalMatrix * normal);
     vFields = fields; vKind = kind;
     gl_Position = projectionMatrix * mvPosition;
@@ -79,13 +81,51 @@ const SURFACE_VERT = /* glsl */`
   }
 `;
 
+// Marble: the hall's stone tints the mood's stone at MARBLE_WEIGHT, so a dark marble darkens a bright
+// hall without blacking it out, and veins mix the vein colour in on top at VEIN_WEIGHT. Two vein
+// families, each a sine drifting along a fixed direction and meandered by four octaves of smooth
+// value noise (skyNoise, SKY_GLSL, reused rather than duplicated); a vein is where the sine crosses
+// zero. Its width is a world width (thicker and thinner along the vein) measured in pixels through
+// the sine's screen-space gradient, so a vein stays a thin line where the turbulence flattens the
+// sine, rather than swelling into a blotch, and fades out, not aliases, once thinner than a pixel.
+const MARBLE_WEIGHT = '0.6', VEIN_WEIGHT = '0.85';
+const MARBLE_GLSL = /* glsl */`
+  uniform vec3 uMarbleBase, uMarbleVein;
+  uniform float uVeinStrength;
+  #define VEIN_WARP 1.6
+  // Smooth signed fbm, about -1..1: bends a vein without creasing it (abs-turbulence makes kinks).
+  float marbleWarp(vec3 q) {
+    float t = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { t += a * (skyNoise(q) * 2.0 - 1.0); q *= 2.03; a *= 0.4; }
+    return t * 2.2;
+  }
+  // Coverage, 0..1, of a vein of half-width w metres along the zero set of s. wpp: metres per pixel.
+  float veinLine(float s, float w, float wpp) {
+    float px = abs(s) / max(fwidth(s), 1e-4);   // distance to the zero crossing, in pixels
+    float hw = w / wpp;                           // half-width in pixels
+    float hwc = max(hw, 0.5);
+    return (1.0 - smoothstep(hwc - 0.5, hwc + 0.5, px)) * clamp(hw * 2.0, 0.0, 1.0);
+  }
+  // 1 on a vein, 0 in the field.
+  float marbleVeins(vec3 p) {
+    float wpp = max(length(fwidth(p)), 1e-5);
+    float width = mix(0.006, 0.03, skyNoise(p * 0.7 + 3.1));   // varies along the vein
+    // The drift term sets the veins' run and spacing (a zero crossing about every 3 m); the warp
+    // meanders them. Warp much stronger than drift turns the veins into closed contour loops.
+    float main = veinLine(sin(dot(p, vec3(0.62, 0.36, 0.70)) + VEIN_WARP * marbleWarp(p * 0.2)), width, wpp);
+    float fine = veinLine(sin(dot(p, vec3(-0.55, 0.95, 0.80)) + VEIN_WARP * marbleWarp(p * 0.35 + 11.7)), width * 0.45, wpp);
+    return max(main, 0.55 * fine);
+  }
+`;
+
 const SURFACE_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
   ${SKY_GLSL}
+  ${MARBLE_GLSL}
   uniform vec3 uKeyDir;        // direction the light travels, normalised
   uniform float uCeiling, uDim;
-  varying vec3 vN, vNV, vV, vFields;
+  varying vec3 vN, vNV, vV, vFields, vP;
   varying float vH, vKind;
   #include <clipping_planes_pars_fragment>
   void main() {
@@ -95,14 +135,23 @@ const SURFACE_FRAG = /* glsl */`
     float facing = gl_FrontFacing ? 1.0 : -1.0;
     vec3 n = normalize(vN) * facing;
     float h = vH;
-    vec3 stone = m.stone * (1.0 + 0.12 * step(0.5, vKind) * step(vKind, 1.5));   // statues a touch lighter
-    stone *= 1.0 - 0.25 * step(1.5, vKind);                                        // pool floors darker
+    // Bounded kind tests, so a later kind cannot be mistaken for a pool.
+    float isStatue = step(0.5, vKind) * step(vKind, 1.5), isPool = step(1.5, vKind) * step(vKind, 2.5);
+    // Veins calm between 10 and 15 m of the flattened distance the fog uses (horizontal plus a third
+    // of the vertical, turned to world orientation by the view rotation), so vaults overhead keep
+    // theirs; fainter on statues.
+    vec3 off = (vec4(vV, 0.0) * viewMatrix).xyz;
+    float near = 1.0 - smoothstep(10.0, 15.0, length(off.xz) + abs(off.y) / 3.0);
+    float vein = marbleVeins(vP) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
+    vec3 stone = m.stone * mix(mix(vec3(1.0), uMarbleBase, ${MARBLE_WEIGHT}), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
+    stone *= 1.0 + 0.12 * isStatue;   // statues a touch lighter
+    stone *= 1.0 - 0.25 * isPool;     // pool floors darker
     vec3 hemi = mix(m.bounce, m.sky, n.y * 0.5 + 0.5);
     vec3 key = m.key * max(dot(n, -uKeyDir), 0.0);
     float grad = mix(1.0 - m.gradient, 1.0, clamp(h / max(uCeiling, 1.0), 0.0, 1.0));
     float contact = 1.0 - m.contact * (1.0 - smoothstep(0.0, 0.6, h));
     vec3 color = stone * (hemi + key) * grad * contact;
-    float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * step(1.5, vKind);
+    float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * isPool;
     color += m.sky * sheen;
     color *= uDim;
     // Fog toward the haze level, toward the sky above the horizon (skyFogTarget, skydome.js).
@@ -112,11 +161,13 @@ const SURFACE_FRAG = /* glsl */`
   }
 `;
 
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1 } = {}) {
+// marble: a MARBLES entry.
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
     // SKY_UNIFORMS spread, never cloned, as for the portals: the dome's update moves the fog target.
-    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim } },
+    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
+      uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }

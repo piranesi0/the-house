@@ -8,6 +8,7 @@ import { isRoofless } from './roof.js';
 import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
+import { MARBLES, marbleFor } from './marble.js';
 import { windowsFor } from './windows.js';
 import { buildEffects, buildPortals } from './effects.js';
 import { colorsFor } from './palette.js';
@@ -67,7 +68,9 @@ export class World {
     // Windows, the key light and the effects mesh belong to y = 0 halls; vista halls keep the
     // default key light and get no effects (they are only seen through the well).
     const win = shaded && y === 0 ? windowsFor(this.seedHash, hall, conns, statues) : null;
-    const surface = shaded ? { material: surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
+    // Each hall's own marble (vista halls too); its east and south connectors share the material.
+    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[marbleFor(this.seedHash, hall, this.fields).marble] }) : null;
+    const surface = shaded ? { material, fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface });
     if (win) for (const mesh of [buildEffects(hall, win), buildPortals(hall, win)]) if (mesh) group.add(mesh);
     group.position.set(hall.cx, hall.floorY, hall.cz);
