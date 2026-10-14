@@ -99,13 +99,15 @@ const SURFACE_VERT = /* glsl */`
 // flow): main() takes dFdx/dFdy of the hall-relative position once, up front, into mDx/mDy, and
 // every filter width below goes through them by the chain rule: exactly for the inlay's linear
 // coordinates and distances, and through the noise's analytic gradient for the veins.
-const MARBLE_WEIGHT = '0.6', VEIN_WEIGHT = '0.85';
+// Floors tint at INLAY_WEIGHT so the inlay can read (at 0.6 contrast is capped at 2.5:1); walls, ceilings
+// and statues keep MARBLE_WEIGHT.
+const MARBLE_WEIGHT = '0.6', INLAY_WEIGHT = '0.85', VEIN_WEIGHT = '0.85';
 const MARBLE_GLSL = /* glsl */`
   uniform vec3 uMarbleBase, uMarbleVein, uInlayA, uInlayB;
   uniform float uVeinStrength, uPattern;      // pattern: 0 chequer, 1 medallion, 2 bands
   uniform vec2 uFoot[${MAX_FOOTPRINT}];       // the hall's footprint, hall-relative (x, z)
   uniform int uFootN;
-  uniform vec2 uHalf;                         // the footprint's half-extents
+  uniform float uMedR;                        // the footprint's inscribed radius about the hall centre
   #define VEIN_WARP 1.6
   vec3 mDx, mDy;                              // vP's screen derivatives, set by main()
   // skyNoise with its gradient: the same trilinear blend of skyHash, written as a polynomial in the
@@ -193,7 +195,7 @@ const MARBLE_GLSL = /* glsl */`
     if (uPattern < 1.5) {
       // Medallion: rings and an eight-point star, centred on the hall. Guarded at the centre, where
       // atan(0, 0) is undefined and the radial direction has no length.
-      float r = length(p), R = 0.8 * min(uHalf.x, uHalf.y), rc = max(r, 1e-3);
+      float r = length(p), R = 0.8 * uMedR, rc = max(r, 1e-3);
       vec2 dir = r > 1e-3 ? p / r : vec2(1.0, 0.0);
       float wr = mWidth2(dir);
       float t = fract(atan(p.y, r > 1e-3 ? p.x : 1.0) * 8.0 / 6.2831853);
@@ -248,7 +250,7 @@ const SURFACE_FRAG = /* glsl */`
     // Floors are inlaid, out to fogFar, where the distance fog is total and hides them.
     vec3 marble = uMarbleBase;
     if (isFloor > 0.5 && flatDist < m.fogFar) marble = inlay(vP.xz);
-    vec3 stone = m.stone * mix(mix(vec3(1.0), marble, ${MARBLE_WEIGHT}), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
+    vec3 stone = m.stone * mix(mix(vec3(1.0), marble, mix(${MARBLE_WEIGHT}, ${INLAY_WEIGHT}, isFloor)), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
     stone *= 1.0 + 0.12 * isStatue;   // statues a touch lighter
     stone *= 1.0 - 0.25 * isPool;     // pool floors darker
     vec3 hemi = mix(m.bounce, m.sky, n.y * 0.5 + 0.5);
@@ -270,14 +272,21 @@ const SURFACE_FRAG = /* glsl */`
 export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [] } = {}) {
   const n = footprint.length / 2;
   const foot = Array.from({ length: MAX_FOOTPRINT }, (_, i) => new THREE.Vector2(footprint[2 * i] ?? 0, footprint[2 * i + 1] ?? 0));
-  const half = new THREE.Vector2(Math.max(0, ...foot.slice(0, n).map(p => Math.abs(p.x))), Math.max(0, ...foot.slice(0, n).map(p => Math.abs(p.y))));
+  // Inscribed radius: the least distance from the hall centre to any footprint edge, so the medallion
+  // stays clear of a cross hall's inner corners.
+  let medR = n ? Infinity : 0;
+  for (let i = 0; i < n; i++) {
+    const a = foot[i], b = foot[(i + 1) % n], ex = b.x - a.x, ez = b.y - a.y, l2 = ex * ex + ez * ez;
+    const t = l2 > 0 ? Math.min(1, Math.max(0, -(a.x * ex + a.y * ez) / l2)) : 0;
+    medR = Math.min(medR, Math.hypot(a.x + t * ex, a.y + t * ez));
+  }
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
     // SKY_UNIFORMS spread, never cloned, as for the portals: the dome's update moves the fog target.
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
       uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength },
       uInlayA: { value: v3(marble.inlay[0]) }, uInlayB: { value: v3(marble.inlay[1]) }, uPattern: { value: PATTERNS.indexOf(pattern) },
-      uFoot: { value: foot }, uFootN: { value: n }, uHalf: { value: half } },
+      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
