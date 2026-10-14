@@ -203,6 +203,14 @@ Decided in this order, because each step constrains the next:
   halls above and below are built with it). If one crossing cannot fit, builds are spread over
   consecutive frames, one hall per frame, farthest last.
 
+  *Why 16 ms (reviewed 2026-10-14):* it is one frame at 60 fps, and builds run on the main thread on
+  top of about 5 ms of rendering, so it is already a generous ceiling: a 16 ms build drops a frame at
+  60 Hz, and on a 180 Hz display any build over about 5 ms drops frames. Raising it would turn every
+  crossing (up to twenty queued halls, one per frame) into a run of hitches. If a hall ever needs
+  more, split its build across frames (lines one frame, surfaces the next) or move the pure geometry
+  into a Web Worker; do not raise the budget. Measured after the build-speed task: worst hall 8.8 ms,
+  median 2.7 ms.
+
 If a phase misses the budget, it does not ship until it fits; cylinder segment counts and the number
 of shafts are the first things to cut.
 
