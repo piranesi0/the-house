@@ -496,9 +496,10 @@ export function waterMaterial() {
   });
 }
 
-// Clouds over the storey above a stair hall (sky.js): one mesh per cloud hall, every blob in it.
-// Each blob drifts whole along x in the vertex shader (attribute centre: its centre; drift: its
-// speed), wraps within uSpread of the hall centre, and fades over its last 4 m before the wrap and
+// Clouds over the storey above a stair hall (sky.js): one mesh for every loaded cloud hall, every
+// blob in it. Each blob drifts whole along x in the vertex shader (attribute centre: its centre;
+// drift: its speed; hall: its hall's centre and floor height in the mesh's frame; fields: its
+// hall's [light, water, decay]), wraps within uSpread of its hall's centre, and fades over its last 4 m before the wrap and
 // its first 4 m after it, so it never jumps. Soft, pale and translucent, densest where the blob
 // faces you, with faint lines along its triangle edges (attribute bary): the creases v0's wire blobs
 // drew, which are every edge of the icosphere. One draw call, no line mesh. Fogged as the stone is
@@ -506,17 +507,18 @@ export function waterMaterial() {
 // blob that is all but fogged out turns transparent, so it dissolves into the dome behind it rather
 // than printing the sky's plain gradient over the dome's sun and stars.
 const CLOUD_VERT = /* glsl */`
-  attribute vec3 centre, bary;
+  attribute vec3 centre, bary, hall, fields;
   attribute float drift;
   uniform float uTime, uSpread;
-  varying vec3 vV, vNV, vBary;
+  varying vec3 vV, vNV, vBary, vFields;
   varying float vH, vFade;
   void main() {
-    float c = mod(centre.x + drift * uTime + uSpread, 2.0 * uSpread) - uSpread;
+    float x = centre.x - hall.x;   // the blob's centre from its hall's centre
+    float c = mod(x + drift * uTime + uSpread, 2.0 * uSpread) - uSpread;
     vFade = 1.0 - smoothstep(uSpread - 4.0, uSpread, abs(c));
-    vec3 p = position + vec3(c - centre.x, 0.0, 0.0);
+    vec3 p = position + vec3(c - x, 0.0, 0.0);
     vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
-    vV = mvPosition.xyz; vH = p.y; vBary = bary;
+    vV = mvPosition.xyz; vH = p.y - hall.y; vBary = bary; vFields = fields;
     vNV = normalize(normalMatrix * (position - centre));   // the sphere's smooth normal
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -525,11 +527,10 @@ const CLOUD_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
   ${SKY_GLSL}
-  uniform vec3 uFields;
-  varying vec3 vV, vNV, vBary;
+  varying vec3 vV, vNV, vBary, vFields;
   varying float vH, vFade;
   void main() {
-    Mood m = moodFor(uFields);
+    Mood m = moodFor(vFields);
     float facing = abs(dot(normalize(vNV), normalize(-vV)));
     vec3 pale = mix(m.haze, m.sky, 0.6);
     float e = min(min(vBary.x, vBary.y), vBary.z);
@@ -541,12 +542,12 @@ const CLOUD_FRAG = /* glsl */`
     gl_FragColor = vec4(colour, a * (1.0 - smoothstep(0.7, 1.0, fog)));
   }
 `;
-// fields: the cloud hall's [light, water, decay]; spread: CLOUD.spread (clouds.js).
-export function cloudMaterial({ fields = [0.5, 0, 0], spread = 12 } = {}) {
+// spread: CLOUD.spread (clouds.js). Each hall's fields come per vertex, as every hall shares the mesh.
+export function cloudMaterial({ spread = 12 } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: CLOUD_VERT, fragmentShader: CLOUD_FRAG,
     // SKY_UNIFORMS spread, never cloned: the dome's update moves the fog target.
-    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uFields: { value: v3(fields) }, uTime: { value: 0 }, uSpread: { value: spread } },
+    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uTime: { value: 0 }, uSpread: { value: spread } },
     transparent: true, depthWrite: false,
   });
 }

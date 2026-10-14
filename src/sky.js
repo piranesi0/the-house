@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildGroup, disposeGroup, primSolid } from './build.js';
 import { cloudMaterial } from './material.js';
 import { sphere } from './shapes/ir.js';
@@ -38,46 +37,89 @@ export class Clouds {
   }
 }
 
-// The shaded look: one translucent mesh per cloud hall holding every blob, drifting in the vertex
-// shader (cloudMaterial). One draw call, no line mesh: the faint lines are drawn in the shader.
+// The shaded look: one translucent mesh holding every blob of every loaded cloud hall, drifting in
+// the vertex shader (cloudMaterial), so the clouds cost one draw call in all, wherever they are.
+// Each hall's blobs are built once, on add, around its own centre; the shared mesh is put together
+// on the next update after a cloud hall comes or goes (as water.js does its sheets), relative to the
+// first hall's centre so float32 positions stay small. No line mesh: the faint lines are in the shader.
 export class ShadedClouds {
-  constructor(scene, seedHash) { this.scene = scene; this.seedHash = seedHash; this.items = new Map(); this.time = 0; }
+  constructor(scene, seedHash) {
+    this.scene = scene; this.seedHash = seedHash; this.items = new Map(); this.time = 0;
+    this.mesh = null; this.dirty = false;
+  }
 
   add(cell) {
     const { hall } = cell;
     if (this.items.has(cell)) return;
     const blobs = cloudsFor(this.seedHash, hall);
     if (!blobs.length) return;
-    const parts = blobs.map(b => {
-      const g = primSolid(sphere(b.r, [b.x, b.y, b.z])), n = g.attributes.position.count;
-      const centre = new Float32Array(n * 3), bary = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { centre.set([b.x, b.y, b.z], i * 3); bary[i * 3 + (i % 3)] = 1; }
-      g.setAttribute('centre', new THREE.BufferAttribute(centre, 3));
-      g.setAttribute('bary', new THREE.BufferAttribute(bary, 3));
-      g.setAttribute('drift', new THREE.BufferAttribute(new Float32Array(n).fill(b.speed), 1));
-      return g;
+    const parts = blobs.map(b => primSolid(sphere(b.r, [b.x, b.y, b.z])));
+    const n = parts.reduce((a, g) => a + g.attributes.position.count, 0);
+    const position = new Float32Array(n * 3), centre = new Float32Array(n * 3), drift = new Float32Array(n);
+    let v = 0;
+    parts.forEach((g, k) => {
+      const b = blobs[k], m = g.attributes.position.count;
+      position.set(g.attributes.position.array, v * 3);
+      for (let i = v; i < v + m; i++) { centre[i * 3] = b.x; centre[i * 3 + 1] = b.y; centre[i * 3 + 2] = b.z; drift[i] = b.speed; }
+      v += m; g.dispose();
     });
-    const geometry = mergeGeometries(parts, false);
-    parts.forEach(g => g.dispose());
-    // The blobs drift across the whole square, so the bounds cover the square, not where they start.
-    const ys = blobs.map(b => b.y), y0 = Math.min(...ys) - CLOUD.r[1], y1 = Math.max(...ys) + CLOUD.r[1], w = CLOUD.spread + CLOUD.r[1];
-    geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, (y0 + y1) / 2, 0), Math.hypot(w, w, (y1 - y0) / 2));
-    const mesh = new THREE.Mesh(geometry, cloudMaterial({ fields: [hall.light, hall.water, hall.decay], spread: CLOUD.spread }));
-    mesh.position.set(hall.cx, hall.floorY, hall.cz);
-    mesh.material.uniforms.uTime.value = this.time;
-    this.scene.add(mesh);
-    this.items.set(cell, mesh);
+    // y range of the blobs, for the shared mesh's bounds: they drift across the whole square.
+    const ys = blobs.map(b => b.y);
+    this.items.set(cell, { hall, n, position, centre, drift, y0: Math.min(...ys) - CLOUD.r[1], y1: Math.max(...ys) + CLOUD.r[1] });
+    this.dirty = true;
   }
 
   remove(cell) {
-    const mesh = this.items.get(cell);
-    if (!mesh) return;
-    mesh.geometry.dispose(); mesh.material.dispose(); mesh.removeFromParent();
-    this.items.delete(cell);
+    if (this.items.delete(cell)) this.dirty = true;
+  }
+
+  rebuild() {
+    this.dirty = false;
+    const halls = [...this.items.values()];
+    if (this.mesh) {
+      this.mesh.geometry.dispose();
+      if (!halls.length) { this.mesh.material.dispose(); this.mesh.removeFromParent(); this.mesh = null; }
+    }
+    if (!halls.length) return;
+    const ox = halls[0].hall.cx, oz = halls[0].hall.cz, total = halls.reduce((a, h) => a + h.n, 0);
+    const position = new Float32Array(total * 3), centre = new Float32Array(total * 3), bary = new Float32Array(total * 3);
+    const hallAt = new Float32Array(total * 3), fields = new Float32Array(total * 3), drift = new Float32Array(total);
+    const w = CLOUD.spread + CLOUD.r[1], box = new THREE.Box3();
+    let v = 0;
+    for (const it of halls) {
+      const { hall } = it, dx = hall.cx - ox, dy = hall.floorY, dz = hall.cz - oz;
+      for (let i = 0; i < it.n; i++) {
+        const j = (v + i) * 3, s = i * 3;
+        position[j] = it.position[s] + dx; position[j + 1] = it.position[s + 1] + dy; position[j + 2] = it.position[s + 2] + dz;
+        centre[j] = it.centre[s] + dx; centre[j + 1] = it.centre[s + 1] + dy; centre[j + 2] = it.centre[s + 2] + dz;
+        // primSolid of a sphere is non-indexed, so vertex i is corner i % 3 of its triangle.
+        bary[j + (i % 3)] = 1;
+        hallAt[j] = dx; hallAt[j + 1] = dy; hallAt[j + 2] = dz;
+        fields[j] = hall.light; fields[j + 1] = hall.water; fields[j + 2] = hall.decay;
+      }
+      drift.set(it.drift, v);
+      box.expandByPoint(new THREE.Vector3(dx - w, dy + it.y0, dz - w)).expandByPoint(new THREE.Vector3(dx + w, dy + it.y1, dz + w));
+      v += it.n;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    g.setAttribute('centre', new THREE.BufferAttribute(centre, 3));
+    g.setAttribute('bary', new THREE.BufferAttribute(bary, 3));
+    g.setAttribute('hall', new THREE.BufferAttribute(hallAt, 3));
+    g.setAttribute('fields', new THREE.BufferAttribute(fields, 3));
+    g.setAttribute('drift', new THREE.BufferAttribute(drift, 1));
+    g.boundingBox = box; g.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+    if (!this.mesh) {
+      this.mesh = new THREE.Mesh(g, cloudMaterial({ spread: CLOUD.spread }));
+      this.mesh.material.uniforms.uTime.value = this.time;
+      this.scene.add(this.mesh);
+    } else this.mesh.geometry = g;
+    this.mesh.position.set(ox, 0, oz);
   }
 
   update(dt) {
     this.time += dt;
-    for (const mesh of this.items.values()) mesh.material.uniforms.uTime.value = this.time;
+    if (this.dirty) this.rebuild();
+    if (this.mesh) this.mesh.material.uniforms.uTime.value = this.time;
   }
 }
