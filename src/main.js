@@ -12,6 +12,7 @@ import { Player } from './player.js';
 import { colorsFor, fogFar } from './palette.js';
 import { moodFor } from './mood.js';
 import { Debug } from './debug.js';
+import { SkyDome } from './skydome.js';
 import { readFragment, writeFragment, randomSeed } from './url.js';
 
 const frag = readFragment(location.hash);
@@ -25,11 +26,13 @@ document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
 const water = new Water(scene, renderer);
-const clouds = new Clouds(scene, seedHash);
+// The old wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
+// haze-coloured spheres, so that look has none until its own clouds replace them.
+const clouds = frag.look === 'shaded' ? null : new Clouds(scene, seedHash);
 const flocks = new Flocks(scene, seedHash);
 const world = new World(scene, seedHash, fields, {
-  onAdd: (c) => { water.add(c); clouds.add(c); flocks.add(c); },
-  onRemove: (c) => { water.remove(c); clouds.remove(c); flocks.remove(c); },
+  onAdd: (c) => { water.add(c); clouds?.add(c); flocks.add(c); },
+  onRemove: (c) => { water.remove(c); clouds?.remove(c); flocks.remove(c); },
 }, frag.look);
 const player = new Player(camera, renderer.domElement);
 const debug = frag.debug ? new Debug(renderer) : null;
@@ -47,13 +50,16 @@ player.place(...freeSpawn(start, world.ensure(frag.x, 0, frag.z).boxes), 0);
 let curX = frag.x, curZ = frag.z;
 history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ, look: frag.look, debug: frag.debug }));
 const shaded = frag.look === 'shaded';
+// The sky dome is the shaded look's alone; look=lines keeps the v0 background.
+const dome = shaded ? new SkyDome(scene) : null;
+let sunK = 1;   // the first frame puts the sun straight where the starting hall's light comes from
 const eased = { light: start.light, water: start.water, decay: start.decay };
 // The surface shader writes mood colours raw (sRGB), so read them as sRGB here, not linear.
 const toHex = ([r, g, b]) => new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace).getHex();
 function sceneColours() {
   if (!shaded) { const g = colorsFor(eased.light).ground; return { bg: g, far: fogFar(eased.light) }; }
   const m = moodFor(eased.light, eased.water, eased.decay);
-  return { bg: toHex(m.haze), far: m.fogFar };
+  return { bg: toHex(m.haze), far: m.fogFar, haze: m.haze };
 }
 const first = sceneColours();
 scene.background = new THREE.Color(first.bg);
@@ -65,8 +71,11 @@ scene.fog = new THREE.Fog(first.bg, 2, first.far);
 function easeMood(dt, cx, cz) {
   const here = world.hall(cx, 0, cz), k = 1 - Math.exp(-dt / 1.5);
   for (const f of ['light', 'water', 'decay']) eased[f] += (here[f] - eased[f]) * k;
-  const { bg, far } = sceneColours();
+  const { bg, far, haze } = sceneColours();
   scene.background.setHex(bg); scene.fog.color.setHex(bg); scene.fog.far = far;
+  // The sun or moon sits where the current hall's key light comes from, eased with the fields;
+  // the dome's horizon fades into the same haze as the background.
+  dome?.update(camera, eased, world.keyDirAt(cx, cz), sunK, haze); sunK = k;
 }
 
 window.addEventListener('resize', () => {
@@ -89,7 +98,7 @@ renderer.setAnimationLoop((t) => {
   if (here.depth > 0 && t / 1000 > nextDrip) { sound.drip(); nextDrip = t / 1000 + 3 + Math.random() * 5; }
   flocks.focus = [cx, cz];
   water.update(t / 1000);
-  clouds.update(dt);
+  clouds?.update(dt);
   flocks.update(t / 1000, dt);
   renderer.render(scene, camera);
   debug?.update(world);

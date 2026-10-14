@@ -72,7 +72,7 @@ export class World {
     if (win) { const fx = buildEffects(hall, win); if (fx) group.add(fx); }
     group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
-    const cell = { hall, group, boxes, floors, slots: built.slots, statues };
+    const cell = { hall, group, boxes, floors, slots: built.slots, statues, keyDir: win?.keyDir ?? null };
     this.cells.set(k, cell);
     // The vista halls above and below a stair hall are only seen through the well and never feed
     // collision (near() reads y = 0), so they build on the next frames instead of this one.
@@ -84,6 +84,9 @@ export class World {
     this.maxBuildMs = Math.max(this.maxBuildMs, this.lastBuildMs);
     return cell;
   }
+  // The key light of the loaded y = 0 hall at (cx, cz), the way the light travels; null when the
+  // hall is not built yet or the look has no windows.
+  keyDirAt(cx, cz) { return this.cells.get(key(cx, 0, cz))?.keyDir ?? null; }
   near(cx, cz) {
     const boxes = [], floors = [];
     for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
