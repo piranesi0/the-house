@@ -9,7 +9,7 @@ import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
 import { windowsFor } from './windows.js';
-import { buildEffects } from './effects.js';
+import { buildEffects, buildPortals } from './effects.js';
 import { colorsFor } from './palette.js';
 import { planLoads } from './schedule.js';
 
@@ -69,7 +69,7 @@ export class World {
     const win = shaded && y === 0 ? windowsFor(this.seedHash, hall, conns, statues) : null;
     const surface = shaded ? { material: surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface });
-    if (win) { const fx = buildEffects(hall, win); if (fx) group.add(fx); }
+    if (win) for (const mesh of [buildEffects(hall, win), buildPortals(hall, win)]) if (mesh) group.add(mesh);
     group.position.set(hall.cx, hall.floorY, hall.cz);
     this.scene.add(group);
     const cell = { hall, group, boxes, floors, slots: built.slots, statues, keyDir: win?.keyDir ?? null };

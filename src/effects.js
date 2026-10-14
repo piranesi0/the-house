@@ -1,7 +1,7 @@
 // Window glows and light shafts for one hall, as one additive mesh. Geometry is hall-relative
 // (subtract cx, floorY, cz) like the surface mesh; the group places it.
 import * as THREE from 'three';
-import { effectsMaterial } from './material.js';
+import { effectsMaterial, portalMaterial } from './material.js';
 import { PATCH } from './windows.js';
 
 const GLOW = [1.0, 0.95, 0.85], SHAFT = [1.0, 0.93, 0.8];
@@ -16,7 +16,9 @@ export function buildEffects(hall, out) {
     const corners = [a, b, c, d].map(rel), order = [0, 1, 2, 0, 2, 3];
     for (const i of order) { pos.push(...corners[i]); uv.push(...[[0, 0], [1, 0], [1, 1], [0, 1]][i]); alpha.push(al[i]); tint.push(...colour); }
   };
-  const glowA = 0.25 + 0.5 * hall.light;
+  // A halo over the sky portal behind it, not a second pane: kept low so it does not double the
+  // pane's brightness or wash out the night stars.
+  const glowA = 0.1 + 0.25 * hall.light;
   for (const w of out.windows) {
     const [cx, cy, cz] = w.c, hx = w.d[0] * w.w / 2, hz = w.d[1] * w.w / 2, nx = w.n[0] * 0.02, nz = w.n[1] * 0.02;
     quad([cx - hx + nx, cy - w.h / 2, cz - hz + nz], [cx + hx + nx, cy - w.h / 2, cz + hz + nz],
@@ -45,5 +47,25 @@ export function buildEffects(hall, out) {
   g.setAttribute('tint', new THREE.Float32BufferAttribute(tint, 3));
   const mesh = new THREE.Mesh(g, effectsMaterial({ fields: [hall.light, hall.water, hall.decay] }));
   mesh.name = 'effects'; mesh.renderOrder = 2;
+  return mesh;
+}
+
+// The window panes of one hall as one mesh with the sky-portal material, so each window reads as
+// an opening onto the sky without cutting the wall. Hall-relative like the rest, 0.01 m in from
+// the wall face (the glow quad sits at 0.02 m). Returns null when the hall has no windows.
+export function buildPortals(hall, out) {
+  if (!out.windows.length) return null;
+  const pos = [];
+  const rel = ([x, y, z]) => [x - hall.cx, y - hall.floorY, z - hall.cz];
+  for (const w of out.windows) {
+    const [cx, cy, cz] = w.c, hx = w.d[0] * w.w / 2, hz = w.d[1] * w.w / 2, nx = w.n[0] * 0.01, nz = w.n[1] * 0.01;
+    const a = [cx - hx + nx, cy - w.h / 2, cz - hz + nz], b = [cx + hx + nx, cy - w.h / 2, cz + hz + nz];
+    const c = [cx + hx + nx, cy + w.h / 2, cz + hz + nz], d = [cx - hx + nx, cy + w.h / 2, cz - hz + nz];
+    for (const p of [a, b, c, a, c, d]) pos.push(...rel(p));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const mesh = new THREE.Mesh(g, portalMaterial({ fields: [hall.light, hall.water, hall.decay] }));
+  mesh.name = 'portals'; mesh.renderOrder = 1;
   return mesh;
 }

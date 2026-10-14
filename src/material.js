@@ -3,6 +3,7 @@
 // turned into a mood with the same arithmetic as mood.js; keep them in step.
 import * as THREE from 'three';
 import { STOPS, WATER, DECAY } from './mood.js';
+import { SKY_GLSL, SKY_UNIFORMS } from './skydome.js';
 
 export const KIND = { arch: 0, statue: 1, pool: 2 };
 
@@ -157,5 +158,44 @@ export function effectsMaterial({ fields = [0.5, 0, 0] } = {}) {
     uniforms: { ...stopUniforms(), uFields: { value: v3(fields) } },
     transparent: true, premultipliedAlpha: true, blending: THREE.AdditiveBlending, depthWrite: false,
     side: THREE.DoubleSide, clipping: true, forceSinglePass: true,
+  });
+}
+
+// Window panes as openings: each pixel takes the sky dome's colour along the view ray, fogged like
+// the wall it sits in. View space as everywhere else: the ray's world direction is the view-space
+// position turned back by the view rotation (a row-vector product is the transpose), so no world
+// position is ever formed. SKY_UNIFORMS are spread, never cloned: the dome's per-frame update moves
+// every portal with it.
+const PORTAL_VERT = /* glsl */`
+  varying vec3 vV, vDir;
+  varying float vH;
+  #include <clipping_planes_pars_vertex>
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vV = mvPosition.xyz; vH = position.y;
+    vDir = (vec4(mvPosition.xyz, 0.0) * viewMatrix).xyz;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <clipping_planes_vertex>
+  }
+`;
+const PORTAL_FRAG = /* glsl */`
+  precision highp float;
+  ${MOOD_GLSL}
+  ${SKY_GLSL}
+  uniform vec3 uFields;
+  varying vec3 vV, vDir;
+  varying float vH;
+  #include <clipping_planes_pars_fragment>
+  void main() {
+    #include <clipping_planes_fragment>
+    Mood m = moodFor(uFields);
+    gl_FragColor = vec4(mix(skyColour(vDir), m.haze, fogAmount(m, vV, vH)), 1.0);
+  }
+`;
+export function portalMaterial({ fields = [0.5, 0, 0] } = {}) {
+  return new THREE.ShaderMaterial({
+    vertexShader: PORTAL_VERT, fragmentShader: PORTAL_FRAG,
+    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uFields: { value: v3(fields) } },
+    side: THREE.DoubleSide, clipping: true,
   });
 }

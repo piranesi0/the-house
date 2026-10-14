@@ -8,7 +8,6 @@ import * as THREE from 'three';
 export const SKY_UNIFORMS = {
   uSkyFields: { value: new THREE.Vector3(0.5, 0, 0) },                 // eased light, water, decay
   uSunDir: { value: new THREE.Vector3(0.3, 0.8, 0.5).normalize() },    // toward the sun or moon
-  uSkyHaze: { value: new THREE.Vector3(0.23, 0.23, 0.26) },            // eased haze, raw sRGB (dome only)
 };
 
 export const SKY_GLSL = /* glsl */`
@@ -55,7 +54,7 @@ const DOME_VERT = /* glsl */`
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
-// Near and below the horizon (about 5 degrees up, and everything down) the dome turns to the
+// Near and below the horizon (about 7 degrees up, and everything down) the dome turns to the
 // current hall's haze, so a long view down a run of doorways ends in haze, not in a bright horizon
 // slot. Dome only: windows and roofless halls never look that low, so SKY_GLSL leaves it out.
 const DOME_FRAG = /* glsl */`
@@ -64,14 +63,15 @@ const DOME_FRAG = /* glsl */`
   uniform vec3 uSkyHaze;
   varying vec3 vDir;
   void main() {
-    gl_FragColor = vec4(mix(skyColour(vDir), uSkyHaze, 1.0 - smoothstep(0.0, 0.08, normalize(vDir).y)), 1.0);
+    gl_FragColor = vec4(mix(skyColour(vDir), uSkyHaze, 1.0 - smoothstep(0.0, 0.12, normalize(vDir).y)), 1.0);
   }
 `;
 
 export class SkyDome {
   constructor(scene) {
     const material = new THREE.ShaderMaterial({
-      vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, uniforms: { ...SKY_UNIFORMS },
+      vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, // uSkyHaze is the dome's own: portals never fade to the horizon haze, so it stays out of SKY_UNIFORMS.
+      uniforms: { ...SKY_UNIFORMS, uSkyHaze: { value: new THREE.Vector3(0.23, 0.23, 0.26) } },
       side: THREE.BackSide, depthWrite: false, depthTest: false,
     });
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), material);
@@ -85,10 +85,12 @@ export class SkyDome {
   update(camera, eased, keyDir, k, haze) {
     this.mesh.position.copy(camera.position);
     SKY_UNIFORMS.uSkyFields.value.set(eased.light, eased.water, eased.decay);
-    if (haze) SKY_UNIFORMS.uSkyHaze.value.set(haze[0], haze[1], haze[2]);
+    if (haze) this.mesh.material.uniforms.uSkyHaze.value.set(haze[0], haze[1], haze[2]);
     if (keyDir) {
       this.target.set(-keyDir[0], -keyDir[1], -keyDir[2]);
-      SKY_UNIFORMS.uSunDir.value.lerp(this.target, k).normalize();
+      // Easing between nearly opposite directions can pass through zero; snap rather than normalize it.
+      const sun = SKY_UNIFORMS.uSunDir.value.lerp(this.target, k);
+      if (sun.lengthSq() < 1e-6) sun.copy(this.target); else sun.normalize();
     }
   }
 }
