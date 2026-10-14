@@ -1823,346 +1823,1152 @@ Alex walks phase B before phase C starts.
 
 ## Phase C: water, mirrors and clouds
 
-### Task 13: Water fill and shaded mirrors
+### Phase C re-plan notes (2026-10-14)
 
-> **Decision 2026-10-13 (Alex, after the phase A walk):** pools are cut out of the hall floor rather than
-> covered by an opaque `'pool'` poly, so the swaying mirror statues below `floorY` show through as in v0.
-> The opaque floor in phase A hides them (final-review finding I-3). Re-plan this task around the cut-out
-> before executing it: the floor needs the pool polygon removed (`poly` has no holes, so clip the floor into
-> pieces as `aroundWell` does), and the water fill stays translucent over the opening.
+Re-planned against `look-phase-c` at 743ed3f, after S1-S3 of the scale/sky/marble plan shipped. Every snippet below was
+applied to a scratch copy of 743ed3f: `npm test` goes 104 → 107 (Task 13 part 1) → 112 (Task 13 part 2) → 114 (Task 14),
+and the page loads in the browser pane, shaded and `look=lines`, with no console output and no GL error.
+
+What changed from the old text, and why:
+
+- **Pools are cut out of the floor** (Alex, 2026-10-13; final review I-3). The old Task 13 laid an opaque, darker `'pool'`
+  poly over the pool, which hides the mirror. Now `aroundPool` (pure, `poly.js`) splits each floor poly into one piece per
+  pool edge, the wedge from the hall centre through that edge, beyond it. It can be that simple because every pool is a
+  smoothed radial 10-gon, star-shaped about the hall centre, and clears every footprint edge by at least 0.85 m (checked
+  over 7000 pools on three seeds). The ceiling is not cut.
+- **What is under the water: the reflected vault.** The shaded mirror reflects what stands in the pool and the hall's own
+  ceiling poly(s), turned over about the water line. So under the water, `ceiling - 2 * depth` metres below the floor
+  (16-40 m), lies the vault seen in the pool: stone, lit as the vault is (bounce from below), dimmed to 0.6. Not nothing:
+  through the opening you would see the dome below the horizon, which is the hall's haze. A luminous pool would then read
+  as a pale hole where it should read darker. Not a separate dim floor: a reflected vault is what a mirror pool shows, so
+  it needs no constant to tune, it shades like the real vault, and it is free (one poly in the hall's own mesh). Beyond the
+  footprint, at grazing angles, the ray leaves the reflected vault. By then the fog has taken it to the haze, which is the
+  void's colour too, so there is no edge. A roofless pool hall has no ceiling poly and shows the void, the haze (rare:
+  roofless halls are bright, pools are wet). Spec §3's "floor under a pool is darker" has no opaque surface any more;
+  `KIND.pool` stays in the shader, unused.
+- **The draw-call budget is already broken in the wet quarters at 743ed3f.** I measured on ravens with the camera at hall
+  centres, 8 headings by 4 pitches, 16:9. The wet block round (-4,-4) peaks at **109 calls** (100-109 at five spots). Each
+  pool hall draws lines, surfaces, effects, portals, the water grid and the mirror lines: six calls. The old plan's sheet and
+  mirror surface would have added two more per pool hall (measured: 136). So phase C now cuts calls:
+  - the shaded mirror goes into the hall's own line and surface meshes (`buildGroup` gains `mirror`). The parts are mirrored
+    on the CPU with the winding reversed (`mirrorTriangles`, `mirrorSegments`, pure), not hung under a `scale.y = -1` group.
+    They are cut at the water sheet: the lines on the CPU, the solids by a `discard` in the shader. They are shaded as their
+    originals through a `KIND.mirrored` offset on the per-vertex kind;
+  - every loaded pool's water sheet is **one mesh** with per-vertex mood, and it draws v0's 1 m grid in its shader;
+  - so a shaded pool hall costs 4 calls, not 6. Measured after Tasks 13-14: **worst 86** (HEAD 109) over the same views,
+    clouds included.
+  - This departs from spec §6's "winding is flipped by the mirror scale" and from the spec §2/§7 idea of water inside the
+    effects mesh. Task 15 records it in the spec.
+- **Shaded mirrors include colossi and colonnade columns** (controller ruling 2). About 75% of colonnade pools have columns
+  standing in them, and with the floor cut those columns would end in mid-air. Columns get the name `'column'` so the pure
+  selection can find them. `look=lines` stays v0: a separate swaying line mirror of the ordinary statues, colossi excluded.
+  The shaded mirror loses v0's 5 cm sway: it is part of the static hall mesh. The grid ripple carries the motion.
+- **Clouds** (controller ruling 3) keep v0's placement exactly: `cloudsFor` (pure) reproduces `sky.js`'s draws, so the
+  `look=lines` wire blobs do not move. In the shaded look they are one mesh per cloud hall, one draw call. Each blob drifts
+  in the vertex shader, fades in and out at the wrap instead of jumping, and has faint lines along its triangle edges
+  (barycentric: the same edges v0's wire blobs drew). Fog is `fogAmount` with the `skyFogTarget` target, and a blob that is
+  all but fogged turns transparent, so it never prints the sky's plain gradient over the dome's sun or stars. Measured:
+  1-3 calls in view.
+- **Clouds over roofless walls do not arise**: a roofless hall never borders a stair hall (S2 ruling D7). A cloud is at least
+  34 m away horizontally and 60-100 m up, so its flattened fog distance is at least 54 m, past the 44 m luminous fog far.
+  They are seen up the shaft only (blobs within about 6 m of the well's axis at a time), and only where the fog allows:
+  luminous halls fully, dusk faintly, chiaroscuro not at all.
+- **Build budget** (ruling 4): the shaded mirror adds primSolid, field sampling and edge templates for the wet statues,
+  columns and one ceiling poly. Measured over 400 halls (240 wet), each the minimum of two warm passes, on the pane's
+  Chrome (Ryzen 7 8745HS, about 1.0-1.1 times Alex's speed per build-profile.md): wet halls median **2.3 → 2.8 ms**, max
+  **5.5 → 6.3 ms**. The scaled worst case on the build-profile machine is about 8.8 → 10 ms, under 16. Task 13 repeats the
+  measurement.
+- **Removed:** the old Task 13 `'pool'` floor poly and its test; `Water(scene, renderer, fields, look)` (now
+  `Water(scene, renderer, look)`); the old Task 14 two-material clouds (a surface mesh plus a line mesh, two calls per hall).
+- The "Self-review notes" after Task 15 describe the old phase C (fill, mirror and cloud meshes as extra calls). For phase C,
+  these notes and Task 15's spec amendment supersede them.
+
+Commits in this phase: `git -c user.name=piranesi0 -c user.email=piranesi16@gmail.com commit`, with a
+`Co-Authored-By: <model> <noreply@anthropic.com>` trailer naming the model that actually wrote the commit (ledger ruling; the
+examples below say Claude Opus 5.5, so change the name if another model writes it).
+
+---
+
+### Task 13: Pools cut out of the floor; the water sheet and the shaded mirror
 
 **Files:**
-- Modify: `src/shapes/index.js` (pool floor poly), `src/material.js` (add `waterMaterial`), `src/water.js`, `src/main.js`
-- Test: `test/floors.test.mjs`
+- Modify: `src/shapes/poly.js` (append `aroundPool`), `src/shapes/index.js` (cut the pool), `src/shapes/common.js` (`column` names its cylinder)
+- Create: `src/reflect.js` (pure: `reflectionPrims`, `SHEET_DROP`, `mirrorTriangles`, `mirrorSegments`)
+- Modify: `src/material.js` (`KIND.mirrored`, `MIRROR_DIM`, mirrored kinds in the surface shader, `waterMaterial`), `src/build.js` (`buildGroup` option `mirror`), `src/world.js` (build the mirror into the hall), `src/water.js` (shaded: one sheet mesh; lines: v0), `src/main.js` (`Water` constructor)
+- Test: `test/poly.test.mjs`, `test/floors.test.mjs`, `test/reflect.test.mjs` (new)
 
 **Interfaces:**
-- Produces: a poly named `'pool'` at `floorY + 0.01` for every hall with a pool (kind 2 in the surface shader: darker, with sheen). `waterMaterial({ fields, floorY }) -> ShaderMaterial` (translucent, Fresnel brightening, opacity capped at 0.6). `Water` takes `(scene, renderer, fields, look)` and adds a fill mesh and a shaded mirror.
+- Consumes: `hall.pool` (hall-relative `[[x, z], ...]`, 10 points), `hall.depth`; `placeStatues` records (`slot`, `prims`, `colossus`); `polyPositions`, `poly`, `translatePrims`; `surfaceMaterial`, `buildGroup`, `primSolid`; `MOOD_GLSL`, `stopUniforms`, `fogAmount`.
+- Produces: `aroundPool(points, cx, cz, pool) -> [[x, y, z][]]` (floor pieces); `reflectionPrims(hall, statues, prims, { shaded }) -> prims` (world space, statue parts tagged `'statue'`); `SHEET_DROP = 0.06`; `mirrorTriangles(pos, depth) -> Float32Array`; `mirrorSegments(pos, depth, top) -> Float32Array`; `KIND.mirrored = 10`; `MIRROR_DIM = 0.6`; `WATER_ALPHA = 0.6`; `surfaceMaterial({ ..., depth, sheet })`; `waterMaterial() -> ShaderMaterial` (attributes `fields`, `h`, `grid`; uniform `uTime`); `buildGroup(prims, { color, ghost, surface, mirror })` with `mirror = { prims, depth, sheet }` hall-relative; `new Water(scene, renderer, look)`.
 
-- [ ] **Step 1: Write the failing test**
+#### Part 1: the floor around the pool (pure)
 
-Append to `test/floors.test.mjs`:
+- [ ] **Step 1: Write the failing tests**
+
+In `test/poly.test.mjs`, change the import line and add three imports below it:
 
 ```js
-test('a hall with a pool has a pool floor poly on its outline, and a dry hall has none', () => {
-  let wet = 0;
-  for (let i = 0; i < 600; i++) {
-    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
-    const hall = hallParams(seed, x, 0, z, fields), conns = connsFor(seed, hall, fields);
-    const pools = buildHall(hall, conns).prims.filter(p => p.kind === 'poly' && p.name === 'pool');
-    if (!hall.pool) { assert.equal(pools.length, 0); continue; }
-    wet++;
-    assert.equal(pools.length, 1);
-    assert.equal(pools[0].points.length, hall.pool.length);
-    for (const [k, p] of pools[0].points.entries()) {
-      assert.ok(Math.abs(p[0] - (hall.cx + hall.pool[k][0])) < 1e-9 && Math.abs(p[2] - (hall.cz + hall.pool[k][1])) < 1e-9);
-      assert.ok(Math.abs(p[1] - (hall.floorY + 0.01)) < 1e-9);
+import { signedArea2, triangulate, polyPositions, clipBox, aroundWell, aroundPool } from '../src/shapes/poly.js';
+import { poolOutline } from '../src/hall.js';
+import { stream, fnv1a } from '../src/rng.js';
+import { footprint } from '../src/shapes/footprint.js';
+```
+
+Insert before `test('ir knows poly: translate moves its points and boundsOf wraps them', () => {`:
+
+```js
+test('aroundPool leaves exactly the pool uncovered, for a rect, an octagon and a cross', () => {
+  for (const shape of ['square', 'octagon', 'cross']) for (let i = 0; i < 20; i++) {
+    const hall = { shape, cx: 0, cz: 0, hx: 9, hz: 9 };
+    const pts = footprint(hall).map(([x, z]) => [x, 0, z]);
+    const pool = poolOutline(stream(fnv1a('ravens'), i, 0, 0, 'hall'), hall.hx, hall.hz);
+    const pieces = aroundPool(pts, 0, 0, pool);
+    assert.equal(pieces.length, pool.length, `${shape}: one piece per pool edge`);
+    const total = pieces.reduce((s, p) => s + Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))), 0);
+    near(total, Math.abs(signedArea2(footprint(hall))) - Math.abs(signedArea2(pool)), 1e-6);
+    const pos = pieces.flatMap(p => polyPositions(poly(p, 'floor')));
+    assert.ok(!covers(pos, 0, 0), `${shape}: pool centre covered`);
+    for (const [x, z] of pool) {
+      assert.ok(!covers(pos, 0.95 * x, 0.95 * z), `${shape}: pool covered at ${x}, ${z}`);
+      assert.ok(covers(pos, 1.05 * x, 1.05 * z), `${shape}: floor beside the pool missing at ${x}, ${z}`);
     }
+    for (const p of pieces) assert.ok(p.every(q => q[1] === 0), 'piece off the floor');
   }
-  assert.ok(wet > 50);
+});
+
+test('aroundPool takes the pool in either winding', () => {
+  const pts = footprint({ shape: 'square', cx: 4, cz: -2, hx: 9, hz: 9 }).map(([x, z]) => [x, 0, z]);
+  const pool = poolOutline(stream(fnv1a('ravens'), 3, 0, 0, 'hall'), 9, 9);
+  const area = (ps) => ps.reduce((s, p) => s + Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))), 0);
+  near(area(aroundPool(pts, 4, -2, pool)), area(aroundPool(pts, 4, -2, [...pool].reverse())), 1e-9);
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `node --test test/floors.test.mjs`
-Expected: FAIL, `pools.length` is `0` for a wet hall.
-
-- [ ] **Step 3: Emit the pool floor in `buildHall`**
-
-In `src/shapes/index.js`, after the builder runs and before the stairwell block:
+In `test/floors.test.mjs`, the first test's title and floor-area check now allow for the pool. Replace
 
 ```js
-  if (hall.pool) prims = [...prims, poly(hall.pool.map(([px, pz]) => [hall.cx + px, hall.floorY + 0.01, hall.cz + pz]), 'pool')];
+test('every hall floor is filled to its footprint, and only a stair hall has a hole', () => {
 ```
 
-- [ ] **Step 4: Add the water material**
+with
+
+```js
+test('every hall floor is filled to its footprint, less the well in a stair hall and the pool in a wet hall', () => {
+```
+
+and replace
+
+```js
+    const hole = hall.isStair ? 4 * WELL.hx * WELL.hz : 0;
+    assert.ok(Math.abs(area - (foot - hole)) < 1e-6, `${hall.shape} floor area ${area} vs ${foot - hole}`);
+```
+
+with
+
+```js
+    const hole = hall.isStair ? 4 * WELL.hx * WELL.hz : 0;
+    const pool = hall.pool ? Math.abs(signedArea2(hall.pool)) : 0;
+    assert.ok(Math.abs(area - (foot - hole - pool)) < 1e-6, `${hall.shape} floor area ${area} vs ${foot - hole - pool}`);
+```
+
+(the ceiling-area line below it stays `foot - hole`: the ceiling is not cut). Then insert before
+`test('every doorway has a threshold floor through the wall thickness', () => {`:
+
+```js
+test('a pool is cut out of its hall floor, and the ceiling over it stays whole', () => {
+  let wet = 0;
+  for (let i = 0; i < 1000; i++) {
+    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
+    const hall = hallParams(seed, x, 0, z, fields);
+    if (!hall.pool) continue;
+    wet++;
+    const built = buildHall(hall, connsFor(seed, hall, fields));
+    const floors = built.prims.filter(p => p.kind === 'poly' && p.name === 'floor');
+    assert.equal(floors.length, hall.pool.length, `${hall.shape} floor pieces`);
+    const pos = floors.flatMap(f => polyPositions(f)), { cx, cz } = hall;
+    assert.ok(!covers(pos, cx, cz), `${hall.shape} pool centre covered`);
+    for (const [px, pz] of hall.pool) {
+      assert.ok(!covers(pos, cx + 0.95 * px, cz + 0.95 * pz), `${hall.shape} pool covered`);
+      assert.ok(covers(pos, cx + 1.05 * px, cz + 1.05 * pz), `${hall.shape} floor beside the pool missing`);
+    }
+    const ceilings = built.prims.filter(p => p.kind === 'poly' && p.name === 'ceiling');
+    assert.equal(ceilings.length, 1);
+    assert.ok(covers(polyPositions(ceilings[0]), cx, cz), 'ceiling over the pool cut');
+  }
+  assert.ok(wet > 100, `only ${wet} wet halls`);
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `node --test test/poly.test.mjs test/floors.test.mjs`
+Expected: `poly.test.mjs` fails to load with `does not provide an export named 'aroundPool'`; `floors.test.mjs` has 2 failures (`square floor area 198.7... vs 158.5...` and `square floor pieces`).
+
+- [ ] **Step 3: Append `aroundPool` to `src/shapes/poly.js`**
+
+```js
+
+// Keeps the part of a polygon on the left of the line through o = [x, z] along d = [dx, dz] (in
+// (x, z), counter-clockwise is left), interpolating every coordinate across the cut.
+function clipLeft(pts, o, d) {
+  const out = [], side = (p) => d[0] * (p[2] - o[1]) - d[1] * (p[0] - o[0]);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], sa = side(a), sb = side(b), ia = sa >= -EPS, ib = sb >= -EPS;
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = sa / (sa - sb); out.push(a.map((c, k) => c + (b[k] - c) * t)); }
+  }
+  return out;
+}
+
+// The floor minus a pool: one piece per pool edge, the part of the floor inside the wedge from the
+// hall centre (cx, cz) through that edge's two ends, beyond the edge. pool: hall-relative [[x, z], ...]
+// (hall.pool). Needs the pool star-shaped about the centre and inside the floor, which poolOutline
+// guarantees (a smoothed radial 10-gon at most 0.95 of the way to the nearest wall, clearing every
+// footprint edge by 0.85 m or more over 7000 pools). A floor with a pool in it, as simple polys.
+export function aroundPool(points, cx, cz, pool) {
+  const ring = signedArea2(pool) < 0 ? [...pool].reverse() : pool, pieces = [];
+  for (let k = 0; k < ring.length; k++) {
+    const a = ring[k], b = ring[(k + 1) % ring.length];
+    let p = clipLeft(points, [cx, cz], a);                              // counter-clockwise of the ray through a
+    p = clipLeft(p, [cx, cz], [-b[0], -b[1]]);                          // clockwise of the ray through b
+    p = clipLeft(p, [cx + a[0], cz + a[1]], [a[0] - b[0], a[1] - b[1]]); // beyond the edge, away from the centre
+    p = dedupe(p);
+    if (p.length >= 3 && Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))) > 1e-6) pieces.push(p);
+  }
+  return pieces;
+}
+```
+
+- [ ] **Step 4: Cut the pool in `buildHall` (`src/shapes/index.js`)**
+
+Change the import `import { aroundWell } from './poly.js';` to `import { aroundWell, aroundPool } from './poly.js';`, and insert
+directly before `  if (opts.floorHole) {`:
+
+```js
+  // A pool is cut out of the floor, so the mirror below it shows through the water (stair halls and
+  // the halls above them are always dry, so this never meets the well's cut).
+  if (hall.pool) prims = prims.flatMap(p => (p.kind === 'poly' && p.name === 'floor')
+    ? aroundPool(p.points, hall.cx, hall.cz, hall.pool).map(pts => poly(pts, 'floor'))
+    : [p]);
+```
+
+- [ ] **Step 5: Run the tests**
+
+Run: `npm test`
+Expected: 107 tests, 107 pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/shapes/poly.js src/shapes/index.js test/poly.test.mjs test/floors.test.mjs
+git -c user.name=piranesi0 -c user.email=piranesi16@gmail.com commit -m "feat: pools cut out of the hall floor
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+The shaded look now shows the void through each pool, the dome's haze, until Part 2 hangs the mirror there. Do not deploy
+between the two parts.
+
+#### Part 2: what the pool reflects, the mirror in the hall's meshes, one water sheet mesh
+
+- [ ] **Step 7: Write the failing tests**
+
+Create `test/reflect.test.mjs`:
+
+```js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fnv1a } from '../src/rng.js';
+import { makeFields } from '../src/fields.js';
+import { hallParams, pointInPolygon } from '../src/hall.js';
+import { connsFor } from '../src/connectors.js';
+import { buildHall } from '../src/shapes/index.js';
+import { placeStatues } from '../src/statues/place.js';
+import { placeColossus } from '../src/statues/colossus.js';
+import { reflectionPrims, mirrorTriangles, mirrorSegments } from '../src/reflect.js';
+
+const seed = fnv1a('ravens'), fields = makeFields(seed);
+
+// A pool hall as World.ensure builds it (connectors left out: they stand outside the hall).
+function wetHall(x, z, opts = {}) {
+  const hall = hallParams(seed, x, 0, z, fields);
+  if (!hall.pool) return null;
+  const built = buildHall(hall, connsFor(seed, hall, fields), opts);
+  const statues = placeStatues(seed, hall, built.slots, built.boxes);
+  const giant = placeColossus(seed, hall, built.boxes, statues);
+  if (giant) statues.push(giant);
+  const prims = [...built.prims, ...statues.flatMap(s => s.prims.map(p => ({ ...p, tag: 'statue' })))];
+  return { hall, statues, prims };
+}
+const inPool = (hall, x, z) => pointInPolygon([x - hall.cx, z - hall.cz], hall.pool);
+
+test('look=lines reflects only the ordinary statues standing in the pool, as v0 did', () => {
+  let n = 0;
+  for (let i = 0; i < 600; i++) {
+    const w = wetHall((i * 31) % 201 - 100, (i * 17) % 201 - 100);
+    if (!w) continue;
+    n++;
+    const want = w.statues.filter(s => !s.colossus && inPool(w.hall, s.slot.x, s.slot.z)).reduce((k, s) => k + s.prims.length, 0);
+    const got = reflectionPrims(w.hall, w.statues, w.prims, { shaded: false });
+    assert.equal(got.length, want);
+    assert.ok(got.every(p => p.tag === 'statue'));
+  }
+  assert.ok(n > 100);
+});
+
+test('the shaded look reflects the colossus and columns standing in the pool, and the vault over it', () => {
+  let colossi = 0, columns = 0;
+  for (let i = 0; i < 2000; i++) {
+    const w = wetHall((i * 31) % 401 - 200, (i * 17) % 401 - 200);
+    if (!w) continue;
+    const got = reflectionPrims(w.hall, w.statues, w.prims, { shaded: true });
+    const wet = w.statues.filter(s => inPool(w.hall, s.slot.x, s.slot.z));
+    assert.equal(got.filter(p => p.tag === 'statue').length, wet.reduce((k, s) => k + s.prims.length, 0));
+    if (wet.some(s => s.colossus)) colossi++;
+    const cols = got.filter(p => p.name === 'column');
+    assert.ok(cols.every(p => inPool(w.hall, p.pos[0], p.pos[2])), 'a dry column reflected');
+    columns += cols.length;
+    if (w.hall.shape === 'colonnade') assert.equal(cols.length, w.prims.filter(p => p.name === 'column' && inPool(w.hall, p.pos[0], p.pos[2])).length);
+    const vault = got.filter(p => p.kind === 'poly');
+    assert.equal(vault.length, 1);
+    assert.ok(vault[0].name === 'ceiling' && vault[0].down);
+    assert.equal(got.length, got.filter(p => p.tag === 'statue').length + cols.length + 1, 'something else reflected');
+  }
+  assert.ok(colossi > 0, 'no colossus stands in a pool');
+  assert.ok(columns > 0, 'no column stands in a pool');
+});
+
+test('a roofless pool hall reflects no vault', () => {
+  for (let i = 0; i < 200; i++) {
+    const w = wetHall((i * 31) % 201 - 100, (i * 17) % 201 - 100, { roofless: true });
+    if (!w) continue;
+    assert.equal(reflectionPrims(w.hall, w.statues, w.prims, { shaded: true }).filter(p => p.kind === 'poly').length, 0);
+  }
+});
+
+test('mirrorTriangles turns a triangle over the water line and keeps it facing out', () => {
+  // Facing +y (counter-clockwise seen from above is clockwise in (x, z) for three's +y normal).
+  const up = [0, 2, 0, 0, 2, 1, 1, 2, 0];
+  const m = mirrorTriangles(up, 0.4);
+  assert.deepEqual([...m].map(v => +v.toFixed(6)), [0, -1.2, 0, 1, -1.2, 0, 0, -1.2, 1]);
+  const normalY = (t) => (t[5] - t[2]) * (t[6] - t[0]) - (t[3] - t[0]) * (t[8] - t[2]);
+  assert.ok(normalY(up) > 0 && normalY([...m]) < 0, 'the mirrored face must face down, as the reflection of an up face');
+});
+
+test('mirrorSegments drops what rises above the sheet and cuts what crosses it', () => {
+  const segs = [0, 2, 0, 0, 3, 0,     // high: mirrored to -1.2..-2.2, kept
+                0, 0, 0, 0, 1, 0,     // standing in 0.4 m of water: mirrored 0.8..-0.2, cut at 0.34
+                0, 0.1, 0, 1, 0.2, 0]; // under the water: mirrored 0.7..0.6, dropped
+  const m = [...mirrorSegments(segs, 0.4, 0.34)].map(v => +v.toFixed(6));
+  assert.deepEqual(m, [0, -1.2, 0, 0, -2.2, 0, 0, 0.34, 0, 0, -0.2, 0]);
+});
+```
+
+- [ ] **Step 8: Run it to verify it fails**
+
+Run: `node --test test/reflect.test.mjs`
+Expected: FAIL, `Cannot find module '.../src/reflect.js'`.
+
+- [ ] **Step 9: Create `src/reflect.js` and name the columns**
+
+```js
+// What a pool reflects. Pure. The mirror hangs every part upside down under the water plane, seen
+// only through the pool's opening in the floor (shapes/index.js cuts it out).
+//
+// look=lines keeps v0: the ordinary statues standing in the pool, no colossi (final review S1 I2:
+// a 10-15 m wireframe hung under a see-through floor). The shaded look reflects what stands in the
+// pool, colossi and colonnade columns included, and the vault over it: the hall's ceiling polys,
+// which the mirror lays out at floorY + 2 * depth - ceiling, the floor seen under the water. A
+// roofless hall has no ceiling poly, so its pool shows the void, which the dome below the horizon
+// paints in the hall's haze.
+import { pointInPolygon } from './hall.js';
+
+// hall: hallParams with a pool; statues: placeStatues records (+ the colossus); prims: the hall's
+// world-space prims as World.ensure builds them. Returns world-space prims, statue parts tagged.
+export function reflectionPrims(hall, statues, prims, { shaded }) {
+  const inPool = (x, z) => pointInPolygon([x - hall.cx, z - hall.cz], hall.pool);
+  const out = statues.filter(s => (shaded || !s.colossus) && inPool(s.slot.x, s.slot.z))
+    .flatMap(s => s.prims.map(p => ({ ...p, tag: 'statue' })));
+  if (!shaded) return out;
+  for (const p of prims) {
+    if (p.kind === 'cyl' && p.name === 'column' && inPool(p.pos[0], p.pos[2])) out.push(p);
+    else if (p.kind === 'poly' && p.name === 'ceiling') out.push(p);
+  }
+  return out;
+}
+
+// The shaded look's water sheet sits this far under the water line, below the grid's old lowest
+// wave (0.05 m); the mirror is cut at the sheet.
+export const SHEET_DROP = 0.06;
+
+// Triangles (nine numbers each, hall-relative) turned over about the water line y = depth: every
+// vertex to (x, 2 * depth - y, z), each triangle's last two corners swapped so it still faces out.
+export function mirrorTriangles(pos, depth) {
+  const out = new Float32Array(pos.length);
+  for (let i = 0; i < pos.length; i += 9) for (const [to, from] of [[0, 0], [3, 6], [6, 3]]) {
+    out[i + to] = pos[i + from]; out[i + to + 1] = 2 * depth - pos[i + from + 1]; out[i + to + 2] = pos[i + from + 2];
+  }
+  return out;
+}
+
+// Line segments (six numbers each) turned over about y = depth and cut at y = top: a segment wholly
+// above is dropped, one crossing it is shortened to end on it.
+export function mirrorSegments(pos, depth, top) {
+  const out = [];
+  for (let i = 0; i < pos.length; i += 6) {
+    const a = [pos[i], 2 * depth - pos[i + 1], pos[i + 2]], b = [pos[i + 3], 2 * depth - pos[i + 4], pos[i + 5]];
+    if (a[1] > top && b[1] > top) continue;
+    const cut = (p, q) => { const t = (top - p[1]) / (q[1] - p[1]); return [p[0] + (q[0] - p[0]) * t, top, p[2] + (q[2] - p[2]) * t]; };
+    out.push(...(a[1] > top ? cut(a, b) : a), ...(b[1] > top ? cut(b, a) : b));
+  }
+  return Float32Array.from(out);
+}
+```
+
+In `src/shapes/common.js`, `column` names its cylinder (the template key ignores names, so builds are unchanged):
+
+```js
+  return { prim: cyl(r, r, h, [x, y0 + h / 2, z], [0, 0, 0], 12, 'column'), box: { min: [x - r, y0, z - r], max: [x + r, y0 + h, z + r] } };
+```
+
+(replacing the line that begins `  return { prim: cyl(r, r, h, [x, y0 + h / 2, z]), box:`).
+
+- [ ] **Step 10: Run the tests**
+
+Run: `npm test`
+Expected: 112 tests, 112 pass.
+
+- [ ] **Step 11: Shade mirrored parts and add the water material (`src/material.js`)**
+
+Replace `export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3 };` with:
+
+```js
+// mirrored: added to a part's own kind when it hangs in a pool's mirror (build.js).
+export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3, mirrored: 10 };
+// A mirrored part is this bright against its original.
+export const MIRROR_DIM = 0.6;
+```
+
+In `SURFACE_FRAG`, replace from `  uniform float uCeiling, uDim;` through `    mDx = dFdx(vP); mDy = dFdy(vP);` with:
+
+```glsl
+  uniform float uCeiling, uDim;
+  uniform float uDepth, uSheet;   // the pool's water line and water sheet, above the hall floor
+  varying vec3 vN, vNV, vV, vFields, vP;
+  varying float vH, vKind;
+  #include <clipping_planes_pars_fragment>
+  void main() {
+    #include <clipping_planes_fragment>
+    Mood m = moodFor(vFields);
+    // A pool's mirror (KIND.mirrored + the part's own kind, build.js) hangs below the water line:
+    // its vertices are the originals turned over about it. It is shaded as the original part (the
+    // height above the floor, the marble's coordinates and the normal turned back for the light, so
+    // a statue's underside stays dark and the reflected vault takes the bounce), dimmer, and only
+    // below the water sheet: parts standing in the water would otherwise mirror up out of it.
+    float mirrored = step(${KIND.mirrored - 0.5}, vKind), kd = vKind - ${KIND.mirrored}.0 * mirrored;
+    // Double-sided: a floor or ramp seen from below is lit as its underside.
+    float facing = gl_FrontFacing ? 1.0 : -1.0;
+    vec3 n = normalize(vN) * facing;
+    n.y *= 1.0 - 2.0 * mirrored;
+    float h = mix(vH, 2.0 * uDepth - vH, mirrored);
+    vec3 p = vec3(vP.x, mix(vP.y, 2.0 * uDepth - vP.y, mirrored), vP.z);
+    // Bounded kind tests, so a later kind cannot be mistaken for a pool.
+    float isStatue = step(0.5, kd) * step(kd, 1.5), isPool = step(1.5, kd) * step(kd, 2.5);
+    float isFloor = step(2.5, kd) * step(kd, 3.5);
+    // Taken here, in uniform control flow, for the filters behind the early-outs below; for a mirrored
+    // part the derivatives of p, which runs y the other way.
+    mDx = dFdx(vP); mDy = dFdy(vP);
+    mDx.y *= 1.0 - 2.0 * mirrored; mDy.y *= 1.0 - 2.0 * mirrored;
+    if (mirrored > 0.5 && vH > uSheet) discard;
+```
+
+Further down in `SURFACE_FRAG`, the marble reads `p`, not `vP`:
+
+```glsl
+    if (near > 0.0) vein = marbleVeins(p) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
+```
+
+```glsl
+    if (isFloor > 0.5 && flatDist < m.fogFar) marble = inlay(p.xz);
+```
+
+and `    color *= uDim;` becomes:
+
+```glsl
+    color *= uDim * mix(1.0, ${MIRROR_DIM.toFixed(2)}, mirrored);
+```
+
+`surfaceMaterial` takes the two pool heights. Replace its comment and signature line with:
+
+```js
+// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z;
+// depth, sheet: the hall's water line and water sheet above its floor (a pool hall's mirror).
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [], depth = 0, sheet = 0 } = {}) {
+```
+
+and its last uniforms line `      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR } },` with:
+
+```js
+      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR }, uDepth: { value: depth }, uSheet: { value: sheet } },
+```
 
 Append to `src/material.js`:
 
 ```js
+
+// The pools' water: one mesh holds every loaded pool's sheet (water.js), each a translucent sheet
+// over the opening in its floor (shaded look), tinted from haze and sky, brighter and milkier at
+// grazing angles (a fake Fresnel term), its opacity capped at WATER_ALPHA so the mirror below always
+// shows (look spec §6). It also draws v0's 1 m grid in the pool's line colour, rippling with uTime
+// (v0 moved the grid's lines up and down; seen from above a ripple across them reads the same), so
+// all the pools in view cost one draw call. Per vertex: fields (the pool hall's centre [light,
+// water, decay]), h (the sheet's height above its hall floor, for the height fog) and grid (the
+// line colour, raw sRGB). Positions are relative to the mesh's own origin, a hall centre on the
+// 24 m grid, so the whole metres of the grid fall where v0's did. View space like the surfaces. The
+// eye is always above the water, so the fog target is the haze (skyFogTarget below the horizon).
+export const WATER_ALPHA = 0.6;
 const WATER_VERT = /* glsl */`
-  varying vec3 vW, vN;
+  attribute vec3 fields, grid;
+  attribute float h;
+  varying vec3 vV, vNV, vFields, vGrid;
+  varying vec2 vXZ;
+  varying float vH;
   void main() {
-    vec4 w = modelMatrix * vec4(position, 1.0);
-    vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * viewMatrix * w;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vV = mvPosition.xyz; vNV = normalize(normalMatrix * normal); vXZ = position.xz;
+    vFields = fields; vGrid = grid; vH = h;
+    gl_Position = projectionMatrix * mvPosition;
   }
 `;
 const WATER_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
-  uniform vec3 uFields; uniform float uFloorY;
-  varying vec3 vW, vN;
+  uniform float uTime;
+  varying vec3 vV, vNV, vFields, vGrid;
+  varying vec2 vXZ;
+  varying float vH;
   void main() {
-    Mood m = moodFor(uFields);
-    vec3 viewDir = normalize(cameraPosition - vW);
-    float fresnel = pow(1.0 - max(dot(normalize(vN), viewDir), 0.0), 3.0);
-    // Tinted from haze and sky; brighter and more opaque at grazing angles, but never past 0.6,
-    // so the mirrored statues below stay visible.
+    Mood m = moodFor(vFields);
+    float fresnel = pow(1.0 - max(dot(normalize(vNV), normalize(-vV)), 0.0), 3.0);
     vec3 tint = mix(m.haze * 0.8, m.sky, 0.35 + 0.5 * fresnel);
-    float a = min(0.6, 0.18 + 0.6 * fresnel);
-    float dist = length(vW - cameraPosition);
-    tint = mix(tint, m.haze, fogAmount(m, dist, vW.y - uFloorY));
-    gl_FragColor = vec4(tint, a);
+    float a = min(${WATER_ALPHA.toFixed(2)}, 0.18 + 0.6 * fresnel);
+    // One-pixel lines on the whole metres, faded out where a cell is under about four pixels.
+    vec2 q = vXZ + vec2(0.03 * sin(0.7 * uTime + 0.5 * vXZ.y), 0.02 * sin(0.5 * uTime + 0.7 * vXZ.x));
+    vec2 w = fwidth(q), d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4));
+    float line = (1.0 - min(min(d.x, d.y), 1.0)) * (1.0 - smoothstep(0.15, 0.4, max(w.x, w.y)));
+    vec3 colour = mix(tint, vGrid, line);
+    gl_FragColor = vec4(mix(colour, m.haze, fogAmount(m, vV, vH)), max(a, line));
   }
 `;
-export function waterMaterial({ fields = [0.5, 1, 0], floorY = 0 } = {}) {
+export function waterMaterial() {
   return new THREE.ShaderMaterial({
     vertexShader: WATER_VERT, fragmentShader: WATER_FRAG,
-    uniforms: { ...stopUniforms(), uFields: { value: v3(fields) }, uFloorY: { value: floorY } },
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { ...stopUniforms(), uTime: { value: 0 } },
+    transparent: true, depthWrite: false,
   });
 }
 ```
 
-- [ ] **Step 5: Fill the pool and shade the mirror in `water.js`**
+- [ ] **Step 12: The mirror in `buildGroup` (`src/build.js`)**
+
+Add the import below the `creases.js` import:
+
+```js
+import { mirrorTriangles, mirrorSegments } from './reflect.js';
+```
+
+Replace the comment, signature and first line of `buildGroup`, from `// A group of line meshes (and optionally a ghost pass)` through
+`  const lineGeoms = prims.map(primGeometry).filter(Boolean);`, with:
+
+```js
+// A pool's mirror in the hall's own meshes: each part's lines and solid turned over about the water
+// line (reflect.js), the lines cut at the sheet (the solids are cut in the shader). No draw call of
+// its own. mirror = { prims, depth, sheet }, hall-relative like the hall's prims.
+function mirroredLines(p, { depth, sheet }) {
+  const g = primGeometry(p);
+  if (!g) return null;
+  const pos = mirrorSegments(g.attributes.position.array, depth, sheet);
+  g.dispose();
+  return pos.length ? geometryOf(pos) : null;
+}
+function mirroredSolid(p, { depth }) {
+  const g = primSolid(p);
+  if (!g) return null;
+  const m = geometryOf(mirrorTriangles(g.attributes.position.array, depth));
+  g.dispose();
+  m.computeVertexNormals();
+  return m;
+}
+
+// A group of line meshes (and optionally a ghost pass) for a primitive list; with `surface`, also
+// one solid mesh named 'surface'. surface = { material, fields, offset: [cx, floorY, cz] }. With
+// `mirror` (shaded pool halls), the pool's reflection joins both: see mirroredLines above.
+export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = null } = {}) {
+  const group = new THREE.Group();
+  if (prims.length === 0) return group;
+  const reflected = mirror ? mirror.prims : [];
+  const lineGeoms = [...prims.map(primGeometry), ...reflected.map(p => mirroredLines(p, mirror))].filter(Boolean);
+```
+
+and in the `if (surface)` block, directly after the existing `for (const p of prims) { ... }` loop, add:
+
+```js
+    for (const p of reflected) {
+      const g = mirroredSolid(p, mirror);
+      if (!g) continue;
+      addFieldAttributes(g, kindOf(p) + KIND.mirrored, surface.fields, surface.offset);
+      solids.push(g);
+    }
+```
+
+Mirrored solids are wound outward by `mirrorTriangles`, so `computeVertexNormals` gives the mirrored normals and
+`gl_FrontFacing` holds; the shader turns `n.y` back for lighting. Field sampling reads x and z only, which the mirror does
+not change.
+
+- [ ] **Step 13: Build the mirror into the hall (`src/world.js`)**
+
+Add the import after `import { windowsFor } from './windows.js';`:
+
+```js
+import { reflectionPrims, SHEET_DROP } from './reflect.js';
+```
+
+Replace the `const material = ...`, `const surface = ...` and `const group = buildGroup(...)` lines in `ensure` with:
+
+```js
+    // A shaded pool's mirror is built into this hall's own two meshes (build.js): what stands in the
+    // pool and the vault over it, turned over about the water line and cut at the water sheet, seen
+    // through the pool's opening in the floor. look=lines keeps v0's separate mirror (water.js).
+    const pool = shaded && hall.pool ? { depth: hall.depth, sheet: hall.depth - SHEET_DROP } : null;
+    const mirror = pool ? { ...pool, prims: translatePrims(reflectionPrims(hall, statues, prims, { shaded: true }), -hall.cx, -hall.floorY, -hall.cz) } : null;
+    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[stone.marble], pattern: stone.pattern, footprint: footprintLocal(hall), ...pool }) : null;
+    const surface = shaded ? { material, fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
+    const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface, mirror });
+```
+
+The mirror's cost lands inside `ensure`'s timing, so the overlay's build figure includes it.
+
+- [ ] **Step 14: Rewrite `src/water.js`**
 
 ```js
 import * as THREE from 'three';
 import { pointInPolygon } from './hall.js';
 import { colorsFor, lerpHex } from './palette.js';
-import { buildGroup, disposeGroup, primSolid } from './build.js';
-import { surfaceMaterial, waterMaterial } from './material.js';
+import { buildGroup, disposeGroup } from './build.js';
+import { waterMaterial } from './material.js';
+import { reflectionPrims, SHEET_DROP } from './reflect.js';
 import { translatePrims, poly } from './shapes/ir.js';
+import { polyPositions } from './shapes/poly.js';
 
+// Pools. look=lines keeps v0: a rippling line grid at the water line and a swaying line mirror of
+// the statues standing in the pool, per pool. The shaded look draws every loaded pool's water sheet
+// in one mesh (waterMaterial, the grid drawn in its shader), rebuilt on the next update after a pool
+// comes or goes; each pool's mirror is part of its hall's own meshes (world.js, build.js), seen
+// through the pool's opening in the floor. So the shaded pools in view cost one draw call in all.
 export class Water {
-  constructor(scene, renderer, fields, look = 'shaded') {
-    this.scene = scene; this.pools = new Map(); this.fields = fields; this.shaded = look === 'shaded';
+  constructor(scene, renderer, look = 'shaded') {
+    this.scene = scene; this.pools = new Map(); this.shaded = look === 'shaded';
+    this.sheets = null; this.dirty = false;
     renderer.localClippingEnabled = true;
   }
 
   add(cell) {
     const { hall } = cell;
     if (!hall.pool || this.pools.has(cell)) return;
-    ... (existing grid-line construction, unchanged, through `this.scene.add(mesh);`)
+    if (this.shaded) { this.pools.set(cell, { hall }); this.dirty = true; return; }
+    const xs = hall.pool.map(p => p[0]), zs = hall.pool.map(p => p[1]);
+    const x0 = Math.floor(Math.min(...xs)), x1 = Math.ceil(Math.max(...xs));
+    const z0 = Math.floor(Math.min(...zs)), z1 = Math.ceil(Math.max(...zs));
+    const inside = (x, z) => pointInPolygon([x, z], hall.pool);
+    const pos = [], base = [];
+    const push = (ax, az, bx, bz) => { pos.push(ax, 0, az, bx, 0, bz); base.push([ax, az], [bx, bz]); };
+    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+      if (!inside(x, z)) continue;
+      if (inside(x + 1, z)) push(x, z, x + 1, z);
+      if (inside(x, z + 1)) push(x, z, x, z + 1);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const color = lerpHex(colorsFor(hall.light).line, 0x7fa0c0, 0.5);
+    const mesh = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }));
+    mesh.position.set(hall.cx, hall.floorY + hall.depth, hall.cz);
+    this.scene.add(mesh);
     const waterY = hall.floorY + hall.depth;
-    const wet = (cell.statues || []).filter(s => pointInPolygon([s.slot.x - hall.cx, s.slot.z - hall.cz], hall.pool));
-    const prims = wet.flatMap(s => s.prims.map(p => ({ ...p, tag: 'statue' })));
-    const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), waterY);
-    const surface = this.shaded
-      ? { material: surfaceMaterial({ floorY: hall.floorY, ceiling: hall.ceiling, side: THREE.DoubleSide, dim: 0.6 }), fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] }
-      : null;
-    const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), { color, ghost: 0, surface });
+    // Colossi are left dry (final review S1 I2): this mirror is clipped only at waterY, not to the
+    // pool outline, so a 10-15 m figure would hang upside down under the see-through floor.
+    const prims = reflectionPrims(hall, cell.statues || [], [], { shaded: false });
+    const mirror = buildGroup(translatePrims(prims, -hall.cx, 0, -hall.cz), { color, ghost: 0 });
     mirror.scale.y = -1;
     mirror.position.set(hall.cx, 2 * waterY, hall.cz);
-    mirror.traverse(o => {
-      if (!o.material) return;
-      o.material.clippingPlanes = [clip];
-      if (o.name !== 'surface') { o.material.transparent = true; o.material.opacity = 0.4; }
-    });
+    mirror.traverse(o => { if (o.material) { o.material.transparent = true; o.material.opacity = 0.4; o.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), waterY)]; } });
     this.scene.add(mirror);
-    let fill = null;
-    if (this.shaded) {
-      const g = primSolid(poly(hall.pool.map(([x, z]) => [x, 0, z]), 'water'));
-      fill = new THREE.Mesh(g, waterMaterial({ fields: [hall.light, hall.water, hall.decay], floorY: hall.floorY }));
-      fill.position.set(hall.cx, waterY - 0.005, hall.cz);
-      fill.renderOrder = 1;
-      this.scene.add(fill);
-    }
-    this.pools.set(cell, { mesh, base, mirror, fill, cx: hall.cx, cz: hall.cz });
+    this.pools.set(cell, { mesh, base, mirror, cx: hall.cx, cz: hall.cz });
   }
 
   remove(cell) {
     const p = this.pools.get(cell);
     if (!p) return;
+    this.pools.delete(cell);
+    if (this.shaded) { this.dirty = true; return; }
     p.mesh.geometry.dispose(); p.mesh.material.dispose(); p.mesh.removeFromParent();
     disposeGroup(p.mirror);
-    if (p.fill) { p.fill.geometry.dispose(); p.fill.material.dispose(); p.fill.removeFromParent(); }
-    this.pools.delete(cell);
   }
-  ... (update unchanged)
+
+  // Every loaded pool's sheet in one geometry, relative to the first pool's hall centre (a multiple
+  // of 24 m, so the grid's whole metres stay put) to keep float32 positions small.
+  rebuild() {
+    this.dirty = false;
+    const halls = [...this.pools.values()].map(p => p.hall);
+    if (this.sheets) { this.sheets.geometry.dispose(); if (!halls.length) { this.sheets.material.dispose(); this.sheets.removeFromParent(); this.sheets = null; } }
+    if (!halls.length) return;
+    const [ox, oz] = [halls[0].cx, halls[0].cz];
+    const pos = [], fields = [], h = [], grid = [];
+    for (const hall of halls) {
+      const y = hall.floorY + hall.depth - SHEET_DROP;
+      const tri = polyPositions(poly(hall.pool.map(([x, z]) => [hall.cx - ox + x, y, hall.cz - oz + z]), 'water'));
+      // The pool's v0 grid colour as raw sRGB, as the shader writes it.
+      const hex = lerpHex(colorsFor(hall.light).line, 0x7fa0c0, 0.5), raw = [hex >> 16 & 255, hex >> 8 & 255, hex & 255].map(v => v / 255);
+      pos.push(...tri);
+      for (let i = 0; i < tri.length / 3; i++) { fields.push(hall.light, hall.water, hall.decay); h.push(hall.depth - SHEET_DROP); grid.push(...raw); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('fields', new THREE.Float32BufferAttribute(fields, 3));
+    g.setAttribute('h', new THREE.Float32BufferAttribute(h, 1));
+    g.setAttribute('grid', new THREE.Float32BufferAttribute(grid, 3));
+    g.computeVertexNormals();
+    if (!this.sheets) { this.sheets = new THREE.Mesh(g, waterMaterial()); this.scene.add(this.sheets); }
+    else this.sheets.geometry = g;
+    this.sheets.position.set(ox, 0, oz);
+  }
+
+  update(t) {
+    if (this.shaded) {
+      if (this.dirty) this.rebuild();
+      if (this.sheets) this.sheets.material.uniforms.uTime.value = t;
+      return;
+    }
+    for (const { mesh, base, mirror, cx, cz } of this.pools.values()) {
+      mirror.position.x = cx + 0.05 * Math.sin(0.7 * t); mirror.position.z = cz + 0.05 * Math.cos(0.5 * t);
+      const a = mesh.geometry.attributes.position;
+      for (let i = 0; i < base.length; i++) {
+        const [x, z] = base[i];
+        a.setY(i, 0.03 * Math.sin(0.7 * t + 0.5 * x) + 0.02 * Math.sin(0.5 * t + 0.7 * z));
+      }
+      a.needsUpdate = true;
+    }
+  }
 }
 ```
 
-The mirror surface uses the `uFloorY` of the real hall and `uDim: 0.6`, so it shades like its statue, dimmer. `scale.y = -1` flips winding, hence `DoubleSide`.
+In `src/main.js`, `const water = new Water(scene, renderer);` becomes `const water = new Water(scene, renderer, frag.look);`.
 
-In `src/main.js`: `const water = new Water(scene, renderer, fields, frag.look);`.
+The `look=lines` branch is v0's code. `reflectionPrims(..., { shaded: false })` returns exactly v0's wet, non-colossus statue
+prims (pinned in Step 7).
 
-- [ ] **Step 6: Run the tests, then walk to water**
+- [ ] **Step 15: Run the tests**
 
 Run: `npm test`
-Expected: all green.
+Expected: 112 tests, 112 pass.
 
-Open `#s=ravens&x=0&z=0&debug` and walk south. Expected: pools have a tinted translucent surface under the moving grid, brighter and milkier at grazing angles but never opaque; the darker pool floor shows through; mirrored statues are shaded, dim, and still visible at a distance; the pool fill fogs with the hall. Calls rise by two per pool hall and stay under 100.
+- [ ] **Step 16: Load it and check for shader errors**
 
-- [ ] **Step 7: Commit**
+Serve the worktree (`python -m http.server 8097 --bind 127.0.0.1`, stop it afterwards) and open
+`http://127.0.0.1:8097/index.html#s=ravens&x=-7&z=0&debug` (an octagon, 1 m pool). Expected: the console is empty (no
+`THREE.WebGLProgram` errors). From the south doorway, looking down across the pool: a translucent sheet with a faint 1 m grid
+over the opening, and through it the mirrored statue legs and the reflected vault far below, dimmer than the real ones. The
+floor around the pool stays inlaid. Then `#s=ravens&x=-3&z=-2&debug` (a colonnade, 0.4 m pool, colossus in the pool): the
+mirrored columns continue the real ones below the water line, and the colossus is mirrored. Then `look=lines` on both: v0's
+grid and swaying line mirror, no sheet, the colossus not mirrored.
+
+- [ ] **Step 17: Measure calls and build time (do not commit the handle)**
+
+Temporarily append to `src/main.js`: `window.__h = { world, water, renderer, scene, camera };`. Reload
+`#s=ravens&x=-4&z=-4&debug`, then run in the console:
+
+```js
+const { world, water, renderer, scene, camera } = window.__h;
+renderer.setAnimationLoop(null); camera.aspect = 16 / 9; camera.updateProjectionMatrix();
+const spots = [[-4,-4],[-3,-5],[-5,-3],[-2,-4],[-4,-2],[-13,-13],[-13,-6],[-14,-11],[-14,-7],[-11,-12],[-3,-2],[-7,0]];
+const calls = spots.map(([cx, cz]) => {
+  world.update(cx, cz); while (world.queue.length) world.tick(); water.update(1);
+  const h = world.hall(cx, 0, cz); let worst = 0;
+  for (let k = 0; k < 8; k++) for (const pitch of [0, 0.5, 1.2, -0.4]) {
+    camera.position.set(h.cx + (h.isStair ? -8 : 0), 1.7, h.cz); camera.rotation.set(pitch, k * Math.PI / 4, 0, 'YXZ'); camera.updateMatrixWorld();
+    renderer.render(scene, camera); worst = Math.max(worst, renderer.info.render.calls);
+  }
+  return worst;
+});
+const { disposeGroup } = await import('./src/build.js');
+const wet = [];
+for (let pass = 0; pass < 3; pass++) for (let x = -20; x < 20; x += 2) for (let z = -20; z < 20; z += 2) {
+  const k = `${x},0,${z}`, old = world.cells.get(k);
+  if (old) { world.hooks.onRemove(old); disposeGroup(old.group); world.cells.delete(k); }
+  const c = world.ensure(x, 0, z);
+  if (pass > 0 && c.hall.pool) wet.push(world.lastBuildMs);
+  world.hooks.onRemove(c); disposeGroup(c.group); world.cells.delete(k);
+}
+wet.sort((a, b) => a - b);
+({ calls, worstCalls: Math.max(...calls), wetMedian: wet[wet.length >> 1], wetMax: wet[wet.length - 1] })
+```
+
+Expected (pane Chrome, Ryzen 7 8745HS): `worstCalls` about 85 (HEAD 109; must be at most 100); wet-hall build median
+about 2.8 ms and max about 6.3 ms (HEAD 2.3 and 5.5). If `worstCalls` exceeds 100 or a wet build exceeds 12 ms, stop and
+report: spec §7 says the phase does not ship over budget. Remove the `window.__h` line and stop the server.
+
+- [ ] **Step 18: Commit**
 
 ```bash
-git add src/shapes/index.js src/material.js src/water.js src/main.js test/floors.test.mjs
-git commit -m "feat: shaded water fill, darker pool floors and shaded mirrors
+git add src/reflect.js src/shapes/common.js src/material.js src/build.js src/world.js src/water.js src/main.js test/reflect.test.mjs
+git -c user.name=piranesi0 -c user.email=piranesi16@gmail.com commit -m "feat: shaded pool mirrors in the hall mesh, one water sheet mesh for every pool
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+The mirror reflects what stands in the pool (colossi and columns too) and the vault
+over it, turned over about the water line on the CPU and cut at the sheet. Pool halls
+draw 4 calls instead of 6; the wet quarter's worst view drops from 109 to about 85.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 14: One cloud mesh per hall, drifting in the shader
+### Task 14: Clouds over the storey above a stair hall
 
 **Files:**
-- Modify: `src/material.js` (add `cloudMaterials`), `src/sky.js`, `src/main.js`
+- Create: `src/clouds.js` (pure: `CLOUD`, `cloudsFor`)
+- Modify: `src/sky.js` (v0 `Clouds` reads `cloudsFor`; new `ShadedClouds`), `src/material.js` (append `cloudMaterial`), `src/main.js`
+- Test: `test/clouds.test.mjs` (new)
 
 **Interfaces:**
-- Produces: `cloudMaterials({ fields }) -> { surface, line }`: two `ShaderMaterial`s sharing a vertex shader that drifts each blob along `x` from its `centreX` attribute at its `drift` attribute speed, wrapping within ±12 m of the hall centre; `uTime` uniform. `Clouds` builds one `Group` per hall (one surface mesh, one line mesh) and `update(dt)` advances `uTime`.
+- Consumes: `stream`; `primSolid`, `buildGroup`, `disposeGroup`; `sphere`; `MOOD_GLSL`, `SKY_GLSL`, `SKY_UNIFORMS`, `stopUniforms`, `fogAmount`, `skyFogTarget`.
+- Produces: `CLOUD = { lift: 6, rise: [2, 10], r: [3, 6], spread: 12, speed: [0.2, 0.5] }`; `cloudsFor(seedHash, hall) -> [{ r, x, y, z, speed }]` (x, z from the hall centre, y above the hall floor; `[]` unless `hall.y === 1`); `cloudMaterial({ fields, spread }) -> ShaderMaterial` (attributes `centre`, `bary`, `drift`; uniforms `uTime`, `uSpread`); `ShadedClouds` and `Clouds`, both `(scene, seedHash)` with `add(cell)`, `remove(cell)`, `update(dt)`.
 
-- [ ] **Step 1: Add the cloud materials**
+- [ ] **Step 1: Write the failing test**
 
-Append to `src/material.js`:
+Create `test/clouds.test.mjs`:
 
 ```js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fnv1a, stream } from '../src/rng.js';
+import { makeFields } from '../src/fields.js';
+import { hallParams } from '../src/hall.js';
+import { CLOUD, cloudsFor } from '../src/clouds.js';
+
+const seed = fnv1a('ravens'), fields = makeFields(seed);
+const above = (i) => hallParams(seed, (i * 31) % 201 - 100, 1, (i * 17) % 201 - 100, fields);
+
+test('cloudsFor draws what v0 sky.js drew, blob for blob', () => {
+  for (let i = 0; i < 200; i++) {
+    const hall = above(i), rng = stream(seed, hall.x, hall.y, hall.z, 'cloud');
+    const baseY = hall.floorY + hall.ceiling + 6, want = [];
+    // v0 sky.js, verbatim draw order: sphere radius, position x, y, z, then speed.
+    for (let k = 0; k < Math.round(1 + 8 * hall.light); k++) {
+      const r = rng.range(3, 6), x = hall.cx + rng.range(-12, 12), y = baseY + rng.range(2, 10), z = hall.cz + rng.range(-12, 12);
+      want.push({ r, x, y, z, speed: rng.range(0.2, 0.5) });
+    }
+    const got = cloudsFor(seed, hall).map(b => ({ ...b, x: hall.cx + b.x, y: hall.floorY + b.y, z: hall.cz + b.z }));
+    assert.equal(got.length, want.length);
+    for (let k = 0; k < want.length; k++) for (const f of ['r', 'x', 'y', 'z', 'speed']) assert.ok(Math.abs(got[k][f] - want[k][f]) < 1e-9, `${f} of blob ${k}`);
+  }
+});
+
+test('clouds float only over the storey above a stair hall, clear of its walls, and drift within the square', () => {
+  for (let i = 0; i < 200; i++) {
+    const hall = above(i), blobs = cloudsFor(seed, hall);
+    assert.equal(blobs.length, Math.round(1 + 8 * hall.light));
+    assert.ok(blobs.length >= 1 && blobs.length <= 9);
+    for (const b of blobs) {
+      assert.ok(b.y - b.r >= hall.ceiling + 2 - 1e-9, 'cloud down among the storey walls');
+      assert.ok(Math.abs(b.x) <= CLOUD.spread && Math.abs(b.z) <= CLOUD.spread);
+      assert.ok(b.speed >= CLOUD.speed[0] && b.speed <= CLOUD.speed[1]);
+    }
+    for (const y of [0, -1, 2]) assert.deepEqual(cloudsFor(seed, { ...hall, y }), []);
+  }
+  assert.deepEqual(cloudsFor(seed, above(7)), cloudsFor(seed, above(7)));
+});
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `node --test test/clouds.test.mjs`
+Expected: FAIL, `Cannot find module '.../src/clouds.js'`.
+
+- [ ] **Step 3: Create `src/clouds.js`**
+
+```js
+// Clouds over the storey above a stair hall: where each blob floats and how fast it drifts. Pure.
+// One stream (salt `cloud`), drawn in v0's order (radius, x, height, z, speed), so look=lines keeps
+// its clouds exactly and the shaded look puts its soft ones in the same places.
+import { stream } from './rng.js';
+
+// lift: above the storey's wall tops (its unbuilt ceiling); rise: further up; spread: the half-width
+// of the square they float and drift in, about the hall centre (they wrap at its x edges).
+export const CLOUD = { lift: 6, rise: [2, 10], r: [3, 6], spread: 12, speed: [0.2, 0.5] };
+
+// Blobs { r, x, y, z, speed }: x, z from the hall centre, y above the hall floor, speed in m/s
+// along +x. Only the storey above a stair hall (y = 1) has clouds; World builds that hall only as a
+// stair hall's vista, without a ceiling, so they are what you see up the shaft.
+export function cloudsFor(seedHash, hall) {
+  if (hall.y !== 1) return [];
+  const rng = stream(seedHash, hall.x, hall.y, hall.z, 'cloud'), { spread } = CLOUD, out = [];
+  const n = Math.round(1 + 8 * hall.light);
+  for (let i = 0; i < n; i++) {
+    const r = rng.range(...CLOUD.r);
+    const x = rng.range(-spread, spread), y = hall.ceiling + CLOUD.lift + rng.range(...CLOUD.rise), z = rng.range(-spread, spread);
+    out.push({ r, x, y, z, speed: rng.range(...CLOUD.speed) });
+  }
+  return out;
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+Run: `npm test`
+Expected: 114 tests, 114 pass.
+
+- [ ] **Step 5: Append `cloudMaterial` to `src/material.js`**
+
+```js
+
+// Clouds over the storey above a stair hall (sky.js): one mesh per cloud hall, every blob in it.
+// Each blob drifts whole along x in the vertex shader (attribute centre: its centre; drift: its
+// speed), wraps within uSpread of the hall centre, and fades over its last 4 m before the wrap and
+// its first 4 m after it, so it never jumps. Soft, pale and translucent, densest where the blob
+// faces you, with faint lines along its triangle edges (attribute bary): the creases v0's wire blobs
+// drew, which are every edge of the icosphere. One draw call, no line mesh. Fogged as the stone is
+// (fogAmount: the flattened distance and the height fog; skyFogTarget above the horizon), and a
+// blob that is all but fogged out turns transparent, so it dissolves into the dome behind it rather
+// than printing the sky's plain gradient over the dome's sun and stars.
 const CLOUD_VERT = /* glsl */`
-  attribute float drift, centreX;
-  uniform float uTime;
-  varying vec3 vN, vW;
+  attribute vec3 centre, bary;
+  attribute float drift;
+  uniform float uTime, uSpread;
+  varying vec3 vV, vNV, vBary;
+  varying float vH, vFade;
   void main() {
-    // Each blob drifts as a whole: its centre moves and wraps, every vertex follows the centre.
-    float c = centreX + drift * uTime;
-    float wrapped = mod(c + 12.0, 24.0) - 12.0;
-    vec3 p = vec3(position.x - centreX + wrapped, position.y, position.z);
-    vec4 w = modelMatrix * vec4(p, 1.0);
-    vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * viewMatrix * w;
+    float c = mod(centre.x + drift * uTime + uSpread, 2.0 * uSpread) - uSpread;
+    vFade = 1.0 - smoothstep(uSpread - 4.0, uSpread, abs(c));
+    vec3 p = position + vec3(c - centre.x, 0.0, 0.0);
+    vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+    vV = mvPosition.xyz; vH = p.y; vBary = bary;
+    vNV = normalize(normalMatrix * (position - centre));   // the sphere's smooth normal
+    gl_Position = projectionMatrix * mvPosition;
   }
 `;
 const CLOUD_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
-  uniform vec3 uFields; uniform float uLines;
-  varying vec3 vN, vW;
+  ${SKY_GLSL}
+  uniform vec3 uFields;
+  varying vec3 vV, vNV, vBary;
+  varying float vH, vFade;
   void main() {
     Mood m = moodFor(uFields);
-    vec3 viewDir = normalize(cameraPosition - vW);
-    float facing = abs(dot(normalize(vN), viewDir));
+    float facing = abs(dot(normalize(vNV), normalize(-vV)));
     vec3 pale = mix(m.haze, m.sky, 0.6);
-    float a = uLines > 0.5 ? 0.25 : 0.35 * (0.5 + 0.5 * facing);
-    vec3 colour = uLines > 0.5 ? mix(pale, vec3(1.0), 0.3) : pale;
-    gl_FragColor = vec4(colour, a);
+    float e = min(min(vBary.x, vBary.y), vBary.z);
+    float line = 1.0 - smoothstep(0.0, 1.5 * fwidth(e), e);
+    vec3 colour = mix(pale, pale * 0.72, 0.6 * line);
+    float a = max(0.32 * smoothstep(0.0, 0.8, facing), 0.3 * line) * vFade;
+    float fog = fogAmount(m, vV, vH);
+    colour = mix(colour, skyFogTarget(m.haze, (vec4(vV, 0.0) * viewMatrix).xyz, fog), fog);
+    gl_FragColor = vec4(colour, a * (1.0 - smoothstep(0.7, 1.0, fog)));
   }
 `;
-export function cloudMaterials({ fields = [0.5, 0, 0] } = {}) {
-  const make = (lines) => new THREE.ShaderMaterial({
+// fields: the cloud hall's [light, water, decay]; spread: CLOUD.spread (clouds.js).
+export function cloudMaterial({ fields = [0.5, 0, 0], spread = 12 } = {}) {
+  return new THREE.ShaderMaterial({
     vertexShader: CLOUD_VERT, fragmentShader: CLOUD_FRAG,
-    uniforms: { ...stopUniforms(), uFields: { value: v3(fields) }, uTime: { value: 0 }, uLines: { value: lines ? 1 : 0 } },
-    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    // SKY_UNIFORMS spread, never cloned: the dome's update moves the fog target.
+    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uFields: { value: v3(fields) }, uTime: { value: 0 }, uSpread: { value: spread } },
+    transparent: true, depthWrite: false,
   });
-  return { surface: make(false), line: make(true) };
 }
 ```
 
-- [ ] **Step 2: Rebuild `src/sky.js` around one group per hall**
+`uTime` is seconds since load. At 10,000 s, float32 keeps `drift * uTime` to about 1 mm, so the drift stays smooth for a
+long walk.
+
+- [ ] **Step 6: Rewrite `src/sky.js`**
 
 ```js
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { primGeometry, primSolid, disposeGroup } from './build.js';
-import { cloudMaterials } from './material.js';
+import { buildGroup, disposeGroup, primSolid } from './build.js';
+import { cloudMaterial } from './material.js';
 import { sphere } from './shapes/ir.js';
-import { stream } from './rng.js';
+import { CLOUD, cloudsFor } from './clouds.js';
 import { colorsFor } from './palette.js';
-import { buildGroup } from './build.js';
 
-const withDrift = (g, drift, centreX) => {
-  const n = g.attributes.position.count;
-  g.setAttribute('drift', new THREE.BufferAttribute(new Float32Array(n).fill(drift), 1));
-  g.setAttribute('centreX', new THREE.BufferAttribute(new Float32Array(n).fill(centreX), 1));
-  return g;
-};
-
+// look=lines: v0's wire blobs, one group each, moved on the CPU.
 export class Clouds {
-  constructor(scene, seedHash, look = 'shaded') { this.scene = scene; this.seedHash = seedHash; this.items = new Map(); this.shaded = look === 'shaded'; this.time = 0; }
+  constructor(scene, seedHash) { this.scene = scene; this.seedHash = seedHash; this.items = new Map(); }
 
   add(cell) {
     const { hall } = cell;
-    if (hall.y !== 1 || this.items.has(cell)) return;
-    const rng = stream(this.seedHash, hall.x, hall.y, hall.z, 'cloud');
-    const n = Math.round(1 + 8 * hall.light), baseY = hall.floorY + hall.ceiling + 6;
-    const blobs = [];
-    for (let i = 0; i < n; i++) blobs.push({ r: rng.range(3, 6), x: rng.range(-12, 12), y: baseY + rng.range(2, 10), z: rng.range(-12, 12), speed: rng.range(0.2, 0.5) });
-    if (!this.shaded) {
-      // The lines look keeps v0's per-blob groups, moved in update().
-      const color = colorsFor(hall.light).line, groups = blobs.map(b => {
-        const g = buildGroup([sphere(b.r, [0, 0, 0])], { color, ghost: 0 });
-        g.position.set(hall.cx + b.x, b.y, hall.cz + b.z); this.scene.add(g); return { g, speed: b.speed, cx: hall.cx };
-      });
-      this.items.set(cell, { groups });
-      return;
+    if (this.items.has(cell)) return;
+    const color = colorsFor(hall.light).line, blobs = [];
+    for (const b of cloudsFor(this.seedHash, hall)) {
+      const g = buildGroup([sphere(b.r, [0, 0, 0])], { color, ghost: 0 });
+      g.position.set(hall.cx + b.x, hall.floorY + b.y, hall.cz + b.z);
+      this.scene.add(g);
+      blobs.push({ g, speed: b.speed, cx: hall.cx });
     }
-    const prims = blobs.map(b => sphere(b.r, [b.x, b.y, b.z]));
-    const solids = prims.map((p, i) => withDrift(primSolid(p), blobs[i].speed, blobs[i].x));
-    const lines = prims.map((p, i) => withDrift(primGeometry(p), blobs[i].speed, blobs[i].x));
-    const mats = cloudMaterials({ fields: [hall.light, hall.water, hall.decay] });
-    const group = new THREE.Group();
-    group.add(new THREE.Mesh(mergeGeometries(solids, false), mats.surface));
-    group.add(new THREE.LineSegments(mergeGeometries(lines, false), mats.line));
-    solids.forEach(g => g.dispose()); lines.forEach(g => g.dispose());
-    group.position.set(hall.cx, 0, hall.cz);
-    this.scene.add(group);
-    this.items.set(cell, { group, mats });
+    if (blobs.length) this.items.set(cell, blobs);
   }
 
   remove(cell) {
-    const it = this.items.get(cell);
-    if (!it) return;
-    if (it.groups) for (const { g } of it.groups) disposeGroup(g);
-    if (it.group) disposeGroup(it.group);
+    const blobs = this.items.get(cell);
+    if (!blobs) return;
+    for (const { g } of blobs) disposeGroup(g);
+    this.items.delete(cell);
+  }
+
+  update(dt) {
+    for (const blobs of this.items.values()) for (const b of blobs) {
+      b.g.position.x += b.speed * dt;
+      if (b.g.position.x > b.cx + CLOUD.spread) b.g.position.x -= 2 * CLOUD.spread;
+    }
+  }
+}
+
+// The shaded look: one translucent mesh per cloud hall holding every blob, drifting in the vertex
+// shader (cloudMaterial). One draw call, no line mesh: the faint lines are drawn in the shader.
+export class ShadedClouds {
+  constructor(scene, seedHash) { this.scene = scene; this.seedHash = seedHash; this.items = new Map(); this.time = 0; }
+
+  add(cell) {
+    const { hall } = cell;
+    if (this.items.has(cell)) return;
+    const blobs = cloudsFor(this.seedHash, hall);
+    if (!blobs.length) return;
+    const parts = blobs.map(b => {
+      const g = primSolid(sphere(b.r, [b.x, b.y, b.z])), n = g.attributes.position.count;
+      const centre = new Float32Array(n * 3), bary = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { centre.set([b.x, b.y, b.z], i * 3); bary[i * 3 + (i % 3)] = 1; }
+      g.setAttribute('centre', new THREE.BufferAttribute(centre, 3));
+      g.setAttribute('bary', new THREE.BufferAttribute(bary, 3));
+      g.setAttribute('drift', new THREE.BufferAttribute(new Float32Array(n).fill(b.speed), 1));
+      return g;
+    });
+    const geometry = mergeGeometries(parts, false);
+    parts.forEach(g => g.dispose());
+    // The blobs drift across the whole square, so the bounds cover the square, not where they start.
+    const ys = blobs.map(b => b.y), y0 = Math.min(...ys) - CLOUD.r[1], y1 = Math.max(...ys) + CLOUD.r[1], w = CLOUD.spread + CLOUD.r[1];
+    geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, (y0 + y1) / 2, 0), Math.hypot(w, w, (y1 - y0) / 2));
+    const mesh = new THREE.Mesh(geometry, cloudMaterial({ fields: [hall.light, hall.water, hall.decay], spread: CLOUD.spread }));
+    mesh.position.set(hall.cx, hall.floorY, hall.cz);
+    mesh.material.uniforms.uTime.value = this.time;
+    this.scene.add(mesh);
+    this.items.set(cell, mesh);
+  }
+
+  remove(cell) {
+    const mesh = this.items.get(cell);
+    if (!mesh) return;
+    mesh.geometry.dispose(); mesh.material.dispose(); mesh.removeFromParent();
     this.items.delete(cell);
   }
 
   update(dt) {
     this.time += dt;
-    for (const it of this.items.values()) {
-      if (it.mats) { it.mats.surface.uniforms.uTime.value = this.time; it.mats.line.uniforms.uTime.value = this.time; continue; }
-      for (const b of it.groups) { b.g.position.x += b.speed * dt; if (b.g.position.x > b.cx + 12) b.g.position.x -= 24; }
-    }
+    for (const mesh of this.items.values()) mesh.material.uniforms.uTime.value = this.time;
   }
 }
 ```
 
-The `withDrift` attributes are added before merging, so every geometry has the same attribute set (`position`, `normal` for solids; `position` for lines) plus `drift` and `centreX`. Lines from `primGeometry` have no `normal`; the cloud vertex shader reads `normal`, which three supplies as a zero default when the attribute is missing, so `vN` is zero and `facing` is `0` for lines: the line branch ignores it.
+`primSolid` of a sphere is non-indexed (`IcosahedronGeometry(r, 1)`, 80 triangles), so vertex `i` is corner `i % 3` of its
+triangle and `bary` marks it.
 
-In `src/main.js`: `const clouds = new Clouds(scene, seedHash, frag.look);`.
+- [ ] **Step 7: Wire them in `src/main.js`**
 
-- [ ] **Step 3: Walk to a stair hall and go up**
+Change `import { Clouds } from './sky.js';` to `import { Clouds, ShadedClouds } from './sky.js';`, replace
 
-Open `#s=ravens&x=0&z=0&debug`, find a stair hall (they are commoner where `light > 0.7` or `water > 0.6`), climb to the hall above. Expected: soft pale translucent clouds with faint lines drifting slowly across the open sky, wrapping without a jump; two draw calls for all of them. Check `#...&look=lines` still shows the v0 wireframe blobs moving.
+```js
+// The old wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
+// haze-coloured spheres, so that look has none until its own clouds replace them.
+const clouds = frag.look === 'shaded' ? null : new Clouds(scene, seedHash);
+```
 
-- [ ] **Step 4: Commit**
+with
+
+```js
+// v0's wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
+// haze-coloured spheres. The shaded look has its own, soft and translucent, in the same places.
+const clouds = frag.look === 'shaded' ? new ShadedClouds(scene, seedHash) : new Clouds(scene, seedHash);
+```
+
+and drop the optional chaining now that `clouds` is never null: `clouds?.add(c)` → `clouds.add(c)`, `clouds?.remove(c)` →
+`clouds.remove(c)`, `clouds?.update(dt);` → `clouds.update(dt);`.
+
+- [ ] **Step 8: Run the tests, then look**
+
+Run: `npm test`
+Expected: 114 tests, 114 pass.
+
+Serve as in Task 13 and open `#s=ravens&x=-13&z=-13&debug` (a luminous stair hall, light 0.88). Expected: no console
+output. Up the shaft, pale soft blobs with faint triangle lines cross the opening now and then. They are small: the shaft is
+44 m deep and the clouds are 60-100 m up. Each fades out near one edge of its square and back in at the other, with no jump.
+In a dusk stair hall (`#s=ravens&x=1&z=4`) they are faint or gone: that is the fog, as on the stone. `look=lines` at
+(-13,-13): v0's wire blobs, unchanged. Re-run Task 13 Step 17's probe: `worstCalls` rises by at most 3 (measured 86).
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/material.js src/sky.js src/main.js
-git commit -m "feat: shaded clouds in one mesh per hall, drifting in the shader
+git add src/clouds.js src/sky.js src/material.js src/main.js test/clouds.test.mjs
+git -c user.name=piranesi0 -c user.email=piranesi16@gmail.com commit -m "feat: soft shaded clouds over stair halls, one mesh per cloud hall
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 15: Phase C walk, numbers and the record
+### Task 15: Alex's walk, the numbers and the record
+
+Alex walks it; the controller records it. Nothing is pushed from this task without Alex's go.
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-10-13-the-house-look-design.md` (status), `README.md` (one line on `look` and `debug`), `docs/superpowers/specs/2026-10-13-the-house-design.md` (§6 note already points here; no change unless numbers moved)
+- Modify: `docs/superpowers/specs/2026-10-13-the-house-look-design.md` (append to the Status line; amend §2's cost bullet and §6's mirror bullet)
 
-- [ ] **Step 1: The three-mood walk (spec "done when" 1)**
+- [ ] **Step 1: The walk (spec done-when 1 and 3)**
 
-Open `#s=ravens&x=0&z=0&debug`. Walk from a bright quarter into a dark one and into the drowned halls. Expected: three distinct moods, no seam at any doorway, shafts and glows fogging with distance, mist in the water. Try two other seeds.
+Alex opens the deployed build with `debug`:
+- **Pools:** `#s=ravens&x=-7&z=0&debug` (octagon, 1 m), `#s=ravens&x=-3&z=-2&debug` (colonnade, colossus in the pool),
+  then the drowned block round (-4,-4). Check: the pools read as mirrors from a distance and as clear water close to; the
+  reflected vault is dim stone, not a bright hole; no seam where the sheet meets the cut floor (the sheet floats `depth` above
+  the cut edge, so a 1 m pool shows its edge through the water); mirrored statues and columns are shaded and dimmer;
+  nothing mirrored pokes up through the water.
+- **Clouds:** `#s=ravens&x=-13&z=-13&debug`, look up the shaft.
+- **Lines:** `look=lines` at (-7,0) and (-13,-13): v0 exactly.
+- **Low views:** from a stairwell's lower landing, look out under the neighbouring floors. Note whether a neighbour's
+  reflected vault or mirror shows there (they hang 16-40 m below the floor).
 
-- [ ] **Step 2: The budget (spec "done when" 2)**
+- [ ] **Step 2: The budget (spec done-when 2)**
 
-Record fps, calls, tris and worst build from the overlay standing in the busiest hall you can find (a colonnade stair hall with a pool nearby). All within budget, or cut column segments and shaft count as §7 says, and re-measure.
+From the overlay, in the drowned block round (-4,-4) and in the busiest bright quarter Alex finds, record fps, worst frame,
+calls, tris and the build max. All within budget: calls at most 100, build at most 16 ms. If not, phase C does not ship
+(spec §7).
 
-- [ ] **Step 3: The lines look (spec "done when" 3)**
+- [ ] **Step 3: Record**
 
-Open `#s=ravens&x=0&z=0&look=lines`. Expected: v0 exactly: wireframe, ghost pass, palette colours, moving cloud blobs, line mirrors.
+Append to the look spec's Status line, after the Phase A sentence, filled from Step 2:
 
-- [ ] **Step 4: Record**
+```markdown
+Phase C shipped <date>: fps <n> (worst frame <n> ms), calls <n> in the drowned block round ravens (-4,-4) (<n> at
+743ed3f), tris <n>k, worst hall build <n> ms, on Alex's machine. Pools are cut out of the floor; the shaded mirror
+(statues, colossi, columns and the reflected vault) is built into its hall's own meshes, and every pool's water is one mesh.
+```
 
-Spec status line: `shipped <date>: phases A, B, C; <machine>: fps <n>, calls <n>, tris <n>k, worst build <n> ms`. README: under the existing controls or URL section add `look=lines` for the wireframe House and `debug` for the overlay.
+In §2, change the cost bullet to: `- **Cost:** about four draw calls per hall (lines, surfaces, effects, window portals);
+the shaded pools' mirrors ride in their halls' meshes, all water sheets are one mesh, and each cloud hall is one more.`
+In §6, change the mirror bullet's last sentence to: `Their parts are turned over on the CPU, winding reversed, and built
+into the hall's own meshes.`
 
 ```bash
-git add docs/superpowers/specs/2026-10-13-the-house-look-design.md README.md
-git commit -m "docs: look and atmosphere shipped; measured budget
+git add docs/superpowers/specs/2026-10-13-the-house-look-design.md
+git -c user.name=piranesi0 -c user.email=piranesi16@gmail.com commit -m "docs: look phase C walked; measured budget
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
-git push
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
