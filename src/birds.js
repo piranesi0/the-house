@@ -1,9 +1,20 @@
 import * as THREE from 'three';
 import { stream } from './rng.js';
 import { colorsFor } from './palette.js';
+import { isRoofless } from './roof.js';
 
 // One bird: a chevron of two segments, flat, pointing along -z.
 const CHEVRON = [-0.25, 0, 0.1, 0, 0, -0.15, 0, 0, -0.15, 0.25, 0, 0.1];
+
+// Where a flock perches: a row under the ceiling by the north wall, 0.6 m in from it. A roofless
+// hall has no ceiling, so its birds sit on the north wall's top instead, along the wall's centre
+// line and only where that wall runs (final review S2 m2): the full width in a rectangular hall,
+// the north arm's end in a cross, the north side in an octagon (hz = hx there).
+function perchRow(seedHash, hall) {
+  if (!isRoofless(seedHash, hall)) return { x0: hall.cx - hall.hx + 1, x1: hall.cx + hall.hx - 1, y: hall.floorY + hall.ceiling - 0.3, z: hall.cz - hall.hz + 0.6 };
+  const half = hall.shape === 'cross' ? hall.hx * 0.5 : hall.shape === 'octagon' ? hall.hx * Math.tan(Math.PI / 8) : hall.hx;
+  return { x0: hall.cx - half + 0.5, x1: hall.cx + half - 0.5, y: hall.floorY + hall.ceiling + 0.1, z: hall.cz - hall.hz - hall.wall / 2 };
+}
 
 // A whole flock is one LineSegments (final review S2 I2: one mesh per bird was 8-14 draw calls a
 // flock). update() turns and places each bird's chevron on the CPU and writes it into the shared
@@ -14,7 +25,7 @@ function flockMesh(n, hall, color) {
   const pos = new THREE.Float32BufferAttribute(new Float32Array(n * CHEVRON.length), 3);
   pos.setUsage(THREE.DynamicDrawUsage);
   g.setAttribute('position', pos);
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, hall.ceiling / 2, 0), Math.hypot(hall.hx, hall.hz, hall.ceiling / 2) + 1);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, hall.ceiling / 2, 0), Math.hypot(hall.hx, hall.hz, hall.ceiling / 2) + 2);
   const mesh = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
   mesh.position.set(hall.cx, hall.floorY, hall.cz);
   return mesh;
@@ -33,9 +44,10 @@ export class Flocks {
     const n = rng.int(8, 14), color = colorsFor(hall.light).line, birds = [];
     const h = hall.floorY + hall.ceiling * 0.6, A = hall.hx * 0.6, B = hall.hz * 0.6;
     const mesh = flockMesh(n, hall, color); this.scene.add(mesh);
+    const row = perchRow(this.seedHash, hall);
     for (let i = 0; i < n; i++) {
-      const perchX = hall.cx - hall.hx + 1 + (i / n) * (2 * hall.hx - 2);
-      birds.push({ phase: rng.range(0, Math.PI * 2), perch: [perchX, hall.floorY + hall.ceiling - 0.3, hall.cz - hall.hz + 0.6] });
+      const perchX = row.x0 + (i / n) * (row.x1 - row.x0);
+      birds.push({ phase: rng.range(0, Math.PI * 2), perch: [perchX, row.y, row.z] });
     }
     this.flocks.set(cell, { mesh, birds, hall, h, A, B, omega: rng.range(0.25, 0.4), period: rng.range(25, 40), settleAt: rng.range(10, 30), settling: 0 });
   }
