@@ -339,7 +339,11 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
 // surfaces. surface: the hall's surfaceMaterial, whose footprint uniforms it shares.
 export function mirrorLineMaterial(color, surface, mirrorFrom) {
   const material = new THREE.LineBasicMaterial({ color });
-  material.onBeforeCompile = (shader) => {
+  material.onBeforeCompile = (shader, renderer) => {
+    // This instance hook shadows fogchunk.js's patch on LineBasicMaterial.prototype, so it must chain
+    // to it first: that hands the line the shared sky uniforms (by reference) and uSkyFog, without
+    // which pool-hall lines fog to plain haze while the surfaces fog toward the sky (final review C I-1).
+    THREE.LineBasicMaterial.prototype.onBeforeCompile.call(material, shader, renderer);
     shader.uniforms.uFoot = surface.uniforms.uFoot; shader.uniforms.uFootN = surface.uniforms.uFootN; shader.uniforms.uMirrorFrom = { value: mirrorFrom };
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', 'uniform int uMirrorFrom;\nvarying float vMirror;\nvarying vec3 vHallP, vEye;\nvoid main() {')
