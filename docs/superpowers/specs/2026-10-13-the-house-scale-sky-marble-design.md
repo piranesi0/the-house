@@ -2,6 +2,8 @@
 
 **Status:** design approved in conversation 2026-10-13, section by section (scale, sky, marble).
 Ready for planning.
+S1 (scale) and S2 (sky) shipped 2026-10-14: fps 180 (locked to a 180 Hz display), worst frame 7 ms,
+typical hall build 9 ms, worst hall build 21 ms (over the 16 ms budget; being fixed) on Alex's machine.
 **Owner:** Alex, building in Claude Code sessions. No Aleph agents.
 **Amends:** `2026-10-13-the-house-look-design.md` §3 (key light elevation; haze measured with a flattened distance), §5
 (window height), §6 (sky), §7 (draw calls per hall), §9 (rollout); and the v0 spec's hall
