@@ -6,6 +6,7 @@ import { STOPS, WATER, DECAY } from './mood.js';
 import { SKY_GLSL, SKY_UNIFORMS } from './skydome.js';
 import { MARBLES, PATTERNS, MAX_FOOTPRINT } from './marble.js';
 import { MIRROR_Y } from './reflect.js';
+import { POOL_SIDES } from './hall.js';
 
 // mirrored: added to a part's own kind when it hangs in a pool's mirror (build.js).
 export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3, mirrored: 10 };
@@ -107,26 +108,30 @@ const SURFACE_VERT = /* glsl */`
 // and statues keep MARBLE_WEIGHT.
 const MARBLE_WEIGHT = '0.6', INLAY_WEIGHT = '0.85', VEIN_WEIGHT = '0.85';
 // A pool's mirror is seen only through the pool: the eye above the hall floor and the ray from it
-// to the mirrored point crossing the mirror plane (the floor, MIRROR_Y) inside the hall's footprint,
-// where the pool is the only opening. Anywhere else (a stair hall's lower landing, its well, the
-// shaft's open ends under a neighbouring floor) the upside-down hall would show wherever the floor
-// does not hide it. eye and p are hall-relative (the hall group is translated, never rotated).
-// Needs uFoot and uFootN declared before it. The surfaces (below) and the mirrored lines
-// (mirrorLineMaterial) share it.
+// to the mirrored point crossing the mirror plane (the floor, MIRROR_Y) inside the pool's outline
+// (uPool, hall.pool), the opening shapes/index.js cuts in the floor. Anywhere else (a stair hall's
+// lower landing, its well, the shaft's open ends under a neighbouring floor) the upside-down hall
+// would show wherever the floor does not hide it; and a mirrored fragment under the solid floor is
+// thrown away here, before any marble work, rather than shaded and then lost to the depth test
+// (final review C I-2). eye and p are hall-relative (the hall group is translated, never rotated).
+// The surfaces (below, pool halls only: #ifdef MIRROR) and the mirrored lines (mirrorLineMaterial)
+// share it; both declare MIRROR_Y (MIRROR_Y_GLSL) before it.
+const MIRROR_Y_GLSL = `const float MIRROR_Y = ${MIRROR_Y.toFixed(3)};`;
 const MIRROR_GLSL = /* glsl */`
-  const float MIRROR_Y = ${MIRROR_Y.toFixed(3)};
-  bool inFootprint(vec2 p) {
+  uniform vec2 uPool[${POOL_SIDES}];          // the pool's outline, hall-relative (x, z)
+  uniform int uPoolN;
+  bool inPool(vec2 p) {
     bool inside = false;
-    for (int i = 0; i < ${MAX_FOOTPRINT}; i++) {
-      if (i >= uFootN) break;
-      vec2 a = uFoot[i], b = uFoot[i == 0 ? uFootN - 1 : i - 1];
+    for (int i = 0; i < ${POOL_SIDES}; i++) {
+      if (i >= uPoolN) break;
+      vec2 a = uPool[i], b = uPool[i == 0 ? uPoolN - 1 : i - 1];
       if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
     }
     return inside;
   }
   bool throughPool(vec3 eye, vec3 p) {
     if (p.y > MIRROR_Y || eye.y <= MIRROR_Y) return false;
-    return inFootprint(mix(eye.xz, p.xz, (eye.y - MIRROR_Y) / (eye.y - p.y)));
+    return inPool(mix(eye.xz, p.xz, (eye.y - MIRROR_Y) / (eye.y - p.y)));
   }
 `;
 
@@ -250,22 +255,41 @@ const SURFACE_FRAG = /* glsl */`
   ${MOOD_GLSL}
   ${SKY_GLSL}
   ${MARBLE_GLSL}
+  ${MIRROR_Y_GLSL}
+  #ifdef MIRROR
   ${MIRROR_GLSL}
+  #endif
   uniform vec3 uKeyDir;        // direction the light travels, normalised
   uniform float uCeiling, uDim;
   varying vec3 vN, vNV, vV, vFields, vP;
   varying float vH, vKind;
   #include <clipping_planes_pars_fragment>
   void main() {
-    #include <clipping_planes_fragment>
-    Mood m = moodFor(vFields);
     // A pool's mirror (KIND.mirrored + the part's own kind, build.js) hangs below the hall floor:
     // its vertices are the originals turned over about it (y = MIRROR_Y, reflect.js). It is shaded
     // as the original part (the height above the floor, the marble's coordinates and the normal
     // turned back for the light, so a statue's underside stays dark and the reflected vault takes
     // the bounce), dimmer, and cut at the floor, so nothing mirrored overlaps what stands in the
-    // water. It is seen only through the pool (throughPool, MIRROR_GLSL).
-    float mirrored = step(${KIND.mirrored - 0.5}, vKind), kd = vKind - ${KIND.mirrored}.0 * mirrored;
+    // water. It is seen only through the pool (throughPool, MIRROR_GLSL). Only pool halls' materials
+    // define MIRROR (surfaceMaterial's pool), so a dry hall's program has no mirror and no discard,
+    // and keeps early-Z (final review C I-2).
+    #ifdef MIRROR
+    float mirrored = step(${KIND.mirrored - 0.5}, vKind);
+    #else
+    const float mirrored = 0.0;
+    #endif
+    float kd = vKind - ${KIND.mirrored}.0 * mirrored;
+    // Taken first, in uniform control flow and before any discard, for the filters behind the
+    // early-outs below; for a mirrored part the derivatives of p, which runs y the other way.
+    mDx = dFdx(vP); mDy = dFdy(vP);
+    mDx.y *= 1.0 - 2.0 * mirrored; mDy.y *= 1.0 - 2.0 * mirrored;
+    #ifdef MIRROR
+    // vP is where a mirrored fragment really is, hall-relative; the eye is vP less the
+    // world-oriented eye-to-fragment offset. As early as possible, before the mood and the marble.
+    if (mirrored > 0.5 && !throughPool(vP - (vec4(vV, 0.0) * viewMatrix).xyz, vP)) discard;
+    #endif
+    #include <clipping_planes_fragment>
+    Mood m = moodFor(vFields);
     // Double-sided: a floor or ramp seen from below is lit as its underside.
     float facing = gl_FrontFacing ? 1.0 : -1.0;
     vec3 n = normalize(vN) * facing;
@@ -275,13 +299,6 @@ const SURFACE_FRAG = /* glsl */`
     // Bounded kind tests, so a later kind cannot be mistaken for a pool.
     float isStatue = step(0.5, kd) * step(kd, 1.5), isPool = step(1.5, kd) * step(kd, 2.5);
     float isFloor = step(2.5, kd) * step(kd, 3.5);
-    // Taken here, in uniform control flow, for the filters behind the early-outs below; for a mirrored
-    // part the derivatives of p, which runs y the other way.
-    mDx = dFdx(vP); mDy = dFdy(vP);
-    mDx.y *= 1.0 - 2.0 * mirrored; mDy.y *= 1.0 - 2.0 * mirrored;
-    // vP is where a mirrored fragment really is, hall-relative; the eye is vP less the
-    // world-oriented eye-to-fragment offset.
-    if (mirrored > 0.5 && !throughPool(vP - (vec4(vV, 0.0) * viewMatrix).xyz, vP)) discard;
     // Veins calm between 10 and 15 m of the flattened distance the fog uses (horizontal plus a third
     // of the vertical, turned to world orientation by the view rotation), so vaults overhead keep
     // theirs; fainter on statues. Past 15 m they are skipped.
@@ -312,7 +329,9 @@ const SURFACE_FRAG = /* glsl */`
 `;
 
 // marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z.
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [] } = {}) {
+// pool: hall.pool (hall-relative [[x, z], ...]) for a hall whose mirror is built into its meshes,
+// else null: only then is the mirror (and its discard) compiled in, one more program (I-2).
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [], pool = null } = {}) {
   const n = footprint.length / 2;
   const foot = Array.from({ length: MAX_FOOTPRINT }, (_, i) => new THREE.Vector2(footprint[2 * i] ?? 0, footprint[2 * i + 1] ?? 0));
   // Inscribed radius: the least distance from the hall centre to any footprint edge, so the medallion
@@ -323,20 +342,27 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
     const t = l2 > 0 ? Math.min(1, Math.max(0, -(a.x * ex + a.y * ez) / l2)) : 0;
     medR = Math.min(medR, Math.hypot(a.x + t * ex, a.y + t * ez));
   }
+  if (pool && pool.length > POOL_SIDES) throw new Error(`pool has ${pool.length} corners, uPool holds ${POOL_SIDES}`);
+  const poolUniforms = pool ? {
+    uPool: { value: Array.from({ length: POOL_SIDES }, (_, i) => new THREE.Vector2(...(pool[i] ?? [0, 0]))) },
+    uPoolN: { value: pool.length },
+  } : {};
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
+    defines: pool ? { MIRROR: '' } : {},
     // SKY_UNIFORMS spread, never cloned, as for the portals: the dome's update moves the fog target.
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
       uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength },
       uInlayA: { value: v3(marble.inlay[0]) }, uInlayB: { value: v3(marble.inlay[1]) }, uPattern: { value: PATTERNS.indexOf(pattern) },
-      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR } },
+      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR }, ...poolUniforms },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
 
 // A pool hall's line material: the hall's lines and its mirrored lines in one mesh (build.js), the
 // mirrored ones (every vertex from index mirrorFrom on) seen only through the pool, as for the
-// surfaces. surface: the hall's surfaceMaterial, whose footprint uniforms it shares.
+// surfaces. surface: the hall's surfaceMaterial (built with its pool), whose pool uniforms it shares
+// by reference.
 export function mirrorLineMaterial(color, surface, mirrorFrom) {
   const material = new THREE.LineBasicMaterial({ color });
   material.onBeforeCompile = (shader, renderer) => {
@@ -344,14 +370,13 @@ export function mirrorLineMaterial(color, surface, mirrorFrom) {
     // to it first: that hands the line the shared sky uniforms (by reference) and uSkyFog, without
     // which pool-hall lines fog to plain haze while the surfaces fog toward the sky (final review C I-1).
     THREE.LineBasicMaterial.prototype.onBeforeCompile.call(material, shader, renderer);
-    shader.uniforms.uFoot = surface.uniforms.uFoot; shader.uniforms.uFootN = surface.uniforms.uFootN; shader.uniforms.uMirrorFrom = { value: mirrorFrom };
+    shader.uniforms.uPool = surface.uniforms.uPool; shader.uniforms.uPoolN = surface.uniforms.uPoolN; shader.uniforms.uMirrorFrom = { value: mirrorFrom };
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', 'uniform int uMirrorFrom;\nvarying float vMirror;\nvarying vec3 vHallP, vEye;\nvoid main() {')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vMirror = gl_VertexID >= uMirrorFrom ? 1.0 : 0.0; vHallP = position; vEye = cameraPosition - (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {', `uniform vec2 uFoot[${MAX_FOOTPRINT}];
-uniform int uFootN;
-varying float vMirror;
+    shader.fragmentShader = shader.fragmentShader.replace('void main() {', `varying float vMirror;
 varying vec3 vHallP, vEye;
+${MIRROR_Y_GLSL}
 ${MIRROR_GLSL}
 void main() {
   if (vMirror > 0.5 && !throughPool(vEye, vHallP)) discard;`);

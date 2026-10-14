@@ -77,7 +77,7 @@ export class World {
     // the floor and cut there, seen through the pool's opening in it. look=lines keeps v0's separate
     // mirror (water.js).
     const mirror = shaded && hall.pool ? { plane: MIRROR_Y, prims: translatePrims(reflectionPrims(hall, statues, built.prims, { shaded: true }), -hall.cx, -hall.floorY, -hall.cz) } : null;
-    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[stone.marble], pattern: stone.pattern, footprint: footprintLocal(hall) }) : null;
+    const material = shaded ? surfaceMaterial({ ceiling: hall.ceiling, keyDir: win?.keyDir, marble: MARBLES[stone.marble], pattern: stone.pattern, footprint: footprintLocal(hall), pool: mirror ? hall.pool : null }) : null;
     const surface = shaded ? { material, fields: this.fields, offset: [hall.cx, hall.floorY, hall.cz] } : null;
     const group = buildGroup(translatePrims(prims, -hall.cx, -hall.floorY, -hall.cz), { color: colorsFor(hall.light).line, ghost: shaded ? 0 : 0.15, surface, mirror });
     if (win) for (const mesh of [buildEffects(hall, win), buildPortals(hall, win)]) if (mesh) group.add(mesh);

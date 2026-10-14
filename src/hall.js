@@ -14,8 +14,11 @@ export function depthFor(water) {
   return 1.0;
 }
 
+// A pool's outline has POOL_SIDES corners (the surface shader's uPool array is this long).
+export const POOL_SIDES = 10;
+
 export function poolOutline(rng, hx, hz) {
-  const n = 10, r0 = Math.min(hx, hz) - 1.5;
+  const n = POOL_SIDES, r0 = Math.min(hx, hz) - 1.5;
   const raw = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
