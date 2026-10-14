@@ -2,10 +2,22 @@ import * as THREE from 'three';
 import { stream } from './rng.js';
 import { colorsFor } from './palette.js';
 
-function chevron(color) {
+// One bird: a chevron of two segments, flat, pointing along -z.
+const CHEVRON = [-0.25, 0, 0.1, 0, 0, -0.15, 0, 0, -0.15, 0.25, 0, 0.1];
+
+// A whole flock is one LineSegments (final review S2 I2: one mesh per bird was 8-14 draw calls a
+// flock). update() turns and places each bird's chevron on the CPU and writes it into the shared
+// buffer. The mesh sits at the hall's centre and floor, so the buffer holds hall-local, float32-safe
+// offsets, as the halls' own geometry does; its bounds are the hall, set once, so it culls as one.
+function flockMesh(n, hall, color) {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute([-0.25, 0, 0.1, 0, 0, -0.15, 0, 0, -0.15, 0.25, 0, 0.1], 3));
-  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  const pos = new THREE.Float32BufferAttribute(new Float32Array(n * CHEVRON.length), 3);
+  pos.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('position', pos);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, hall.ceiling / 2, 0), Math.hypot(hall.hx, hall.hz, hall.ceiling / 2) + 1);
+  const mesh = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+  mesh.position.set(hall.cx, hall.floorY, hall.cz);
+  return mesh;
 }
 
 export class Flocks {
@@ -20,18 +32,18 @@ export class Flocks {
     const rng = stream(this.seedHash, hall.x, hall.y, hall.z, 'birds');
     const n = rng.int(8, 14), color = colorsFor(hall.light).line, birds = [];
     const h = hall.floorY + hall.ceiling * 0.6, A = hall.hx * 0.6, B = hall.hz * 0.6;
+    const mesh = flockMesh(n, hall, color); this.scene.add(mesh);
     for (let i = 0; i < n; i++) {
-      const mesh = chevron(color); this.scene.add(mesh);
       const perchX = hall.cx - hall.hx + 1 + (i / n) * (2 * hall.hx - 2);
-      birds.push({ mesh, phase: rng.range(0, Math.PI * 2), perch: [perchX, hall.floorY + hall.ceiling - 0.3, hall.cz - hall.hz + 0.6] });
+      birds.push({ phase: rng.range(0, Math.PI * 2), perch: [perchX, hall.floorY + hall.ceiling - 0.3, hall.cz - hall.hz + 0.6] });
     }
-    this.flocks.set(cell, { birds, hall, h, A, B, omega: rng.range(0.25, 0.4), period: rng.range(25, 40), settleAt: rng.range(10, 30), settling: 0 });
+    this.flocks.set(cell, { mesh, birds, hall, h, A, B, omega: rng.range(0.25, 0.4), period: rng.range(25, 40), settleAt: rng.range(10, 30), settling: 0 });
   }
 
   remove(cell) {
     const f = this.flocks.get(cell);
     if (!f) return;
-    for (const b of f.birds) { b.mesh.geometry.dispose(); b.mesh.material.dispose(); b.mesh.removeFromParent(); }
+    f.mesh.geometry.dispose(); f.mesh.material.dispose(); f.mesh.removeFromParent();
     this.flocks.delete(cell);
   }
 
@@ -43,14 +55,21 @@ export class Flocks {
         && Math.max(Math.abs(f.hall.x - this.focus[0]), Math.abs(f.hall.z - this.focus[1])) <= 1) this.onWings?.();
       f.target = target;
       f.settling += (target - f.settling) * (1 - Math.exp(-dt / 1.2));
-      for (const b of f.birds) {
+      const out = f.mesh.geometry.attributes.position, buf = out.array, { cx, floorY, cz } = f.hall;
+      f.birds.forEach((b, i) => {
         const a = f.omega * t + b.phase;
         const fx = f.hall.cx + f.A * Math.sin(a), fz = f.hall.cz + f.B * 0.6 * Math.sin(2 * a), fy = f.h + 0.8 * Math.sin(3 * a);
         const x = fx + (b.perch[0] - fx) * f.settling, y = fy + (b.perch[1] - fy) * f.settling, z = fz + (b.perch[2] - fz) * f.settling;
         const vx = f.A * f.omega * Math.cos(a), vz = f.B * 1.2 * f.omega * Math.cos(2 * a);
-        b.mesh.position.set(x, y, z);
-        b.mesh.rotation.y = Math.atan2(-vx, -vz) * (1 - f.settling);
-      }
+        // As Object3D.rotation.y then position did per bird: turn about y, then move.
+        const r = Math.atan2(-vx, -vz) * (1 - f.settling), c = Math.cos(r), s = Math.sin(r);
+        const ox = x - cx, oy = y - floorY, oz = z - cz;
+        for (let k = 0, o = i * CHEVRON.length; k < CHEVRON.length; k += 3, o += 3) {
+          const px = CHEVRON[k], pz = CHEVRON[k + 2];
+          buf[o] = ox + c * px + s * pz; buf[o + 1] = oy + CHEVRON[k + 1]; buf[o + 2] = oz - s * px + c * pz;
+        }
+      });
+      out.needsUpdate = true;
     }
   }
 }
