@@ -58,10 +58,14 @@ test('the marble is constant within a district: neighbours differ only across a 
   for (let t = 0; t < 1; t += 0.001) if (!THEME_CUTS.some(c => t < c && c <= t + 0.004)) assert.equal(marbleOf(t), marbleOf(t + 0.004));
 });
 
-test('the pattern stream is the hall\'s own: the marble salt moves no other draw', () => {
-  const hall = hallParams(seed, 3, 0, -2, fields);
-  assert.deepEqual(hallParams(seed, 3, 0, -2, fields), hall);
-  const p = new Set();
+test('the pattern stream is the hall own: marbleFor moves no other draw, and the pattern varies', () => {
+  const snap = (hall) => JSON.stringify([hall, connsFor(seed, hall, fields), buildHall(hall, connsFor(seed, hall, fields)).prims]);
+  const halls = [];
+  for (let i = 0; i < 20; i++) halls.push(hallParams(seed, (i * 7) % 23 - 11, 0, (i * 5) % 19 - 9, fields));
+  const before = halls.map(snap);
+  for (const h of halls) marbleFor(seed, h, fields);
+  assert.deepEqual(halls.map(snap), before);
+  const hall = halls[0], p = new Set();
   for (let x = 0; x < 30; x++) p.add(marbleFor(seed, { ...hall, x }, fields).pattern);
   assert.equal(p.size, 3, 'pattern does not vary from hall to hall');
 });
@@ -91,6 +95,8 @@ test('every footprint fits the shader\'s 12-vertex uniform, the cross exactly, h
     counts[hall.shape] = flat.length / 2;
     assert.ok(flat.length / 2 <= MAX_FOOTPRINT);
     for (let k = 0; k < flat.length; k += 2) assert.ok(Math.abs(flat[k]) <= hall.hx + 1e-9 && Math.abs(flat[k + 1]) <= hall.hz + 1e-9, 'not hall-relative');
+    const mx = Math.max(...flat.filter((_, k) => k % 2 === 0).map(Math.abs)), mz = Math.max(...flat.filter((_, k) => k % 2 === 1).map(Math.abs));
+    assert.ok(Math.abs(mx - hall.hx) < 1e-9 && Math.abs(mz - hall.hz) < 1e-9, `${hall.shape} extremes ${mx},${mz} vs ${hall.hx},${hall.hz}`);
   }
   assert.deepEqual(counts, { long: 4, square: 4, octagon: 8, cross: 12, colonnade: 4 });
 });
