@@ -335,15 +335,15 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
 }
 
 // A pool hall's line material: the hall's lines and its mirrored lines in one mesh (build.js), the
-// mirrored ones (attribute mirror = 1) seen only through the pool, as for the surfaces. surface: the
-// hall's surfaceMaterial, whose footprint uniforms it shares.
-export function mirrorLineMaterial(color, surface) {
+// mirrored ones (every vertex from index mirrorFrom on) seen only through the pool, as for the
+// surfaces. surface: the hall's surfaceMaterial, whose footprint uniforms it shares.
+export function mirrorLineMaterial(color, surface, mirrorFrom) {
   const material = new THREE.LineBasicMaterial({ color });
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uFoot = surface.uniforms.uFoot; shader.uniforms.uFootN = surface.uniforms.uFootN;
+    shader.uniforms.uFoot = surface.uniforms.uFoot; shader.uniforms.uFootN = surface.uniforms.uFootN; shader.uniforms.uMirrorFrom = { value: mirrorFrom };
     shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'attribute float mirror;\nvarying float vMirror;\nvarying vec3 vHallP, vEye;\nvoid main() {')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vMirror = mirror; vHallP = position; vEye = cameraPosition - (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;');
+      .replace('void main() {', 'uniform int uMirrorFrom;\nvarying float vMirror;\nvarying vec3 vHallP, vEye;\nvoid main() {')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vMirror = gl_VertexID >= uMirrorFrom ? 1.0 : 0.0; vHallP = position; vEye = cameraPosition - (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader.replace('void main() {', `uniform vec2 uFoot[${MAX_FOOTPRINT}];
 uniform int uFootN;
 varying float vMirror;

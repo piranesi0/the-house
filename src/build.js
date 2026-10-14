@@ -176,12 +176,10 @@ export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = n
   if (prims.length === 0) return group;
   const reflected = mirror ? mirror.prims : [];
   const lineGeoms = prims.map(primGeometry).filter(Boolean);
-  if (mirror) {
-    // Which lines are mirrored, for the line material's pool test (mirrorLineMaterial).
-    const mark = (g, v) => g.setAttribute('mirror', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
-    lineGeoms.forEach(g => mark(g, 0));
-    for (const p of reflected) { const g = mirroredLines(p, mirror); if (g) lineGeoms.push(mark(g, 1)); }
-  }
+  // The mirrored lines go after the real ones, so the line material tells them apart by vertex
+  // index alone (mirrorLineMaterial): no per-vertex flag.
+  const mirrorFrom = lineGeoms.reduce((n, g) => n + g.attributes.position.count, 0);
+  for (const p of reflected) { const g = mirroredLines(p, mirror); if (g) lineGeoms.push(g); }
   if (lineGeoms.length) {
     const merged = mergeGeometries(lineGeoms, false);
     lineGeoms.forEach(g => g.dispose());
@@ -190,7 +188,7 @@ export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = n
       gm.renderOrder = -1;
       group.add(gm);
     }
-    group.add(new THREE.LineSegments(merged, mirror && surface ? mirrorLineMaterial(color, surface.material) : new THREE.LineBasicMaterial({ color })));
+    group.add(new THREE.LineSegments(merged, mirror && surface ? mirrorLineMaterial(color, surface.material, mirrorFrom) : new THREE.LineBasicMaterial({ color })));
   }
   if (surface) {
     const solids = [];
