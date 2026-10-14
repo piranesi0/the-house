@@ -1,6 +1,11 @@
 // Crease edges from a per-kind template instead of running three's EdgesGeometry once per part.
 // No three here, so the maths is testable in node; build.js feeds it the index buffers.
 //
+// Mirrors three@0.170.0: EdgesGeometry (hashing, Triangle.getNormal, the threshold test),
+// CylinderGeometry, BoxGeometry and PolyhedronGeometry/IcosahedronGeometry (vertex positions). These
+// are copies of their maths, so they can drift silently: on ANY three upgrade, rerun the B1 equality
+// check (templates against three's own geometry and EdgesGeometry, edge for edge) before trusting it.
+//
 // EdgesGeometry hashes every vertex through strings to find which triangle edges meet, then keeps an
 // edge when the two faces' normals differ by more than the threshold angle. Which edges meet (the
 // "program") only depends on which vertices share a hash, and that is the same for every part of one
