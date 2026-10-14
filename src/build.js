@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { polyPositions } from './shapes/poly.js';
 import { KIND } from './material.js';
 import { CELL } from './hall.js';
+import { isInlaid } from './marble.js';
 import { edgeProgram, fits, runEdges, cylinderPositions, boxPositions, spherePositions, unindex } from './creases.js';
 
 // Box, cylinder and sphere parts share one template per kind (creases.js): the reference part's
@@ -121,7 +122,7 @@ export function primSolid(p) {
   return g;
 }
 
-const kindOf = (p) => p.name === 'pool' ? KIND.pool : p.tag === 'statue' ? KIND.statue : KIND.arch;
+const kindOf = (p) => p.name === 'pool' ? KIND.pool : p.tag === 'statue' ? KIND.statue : isInlaid(p) ? KIND.floor : KIND.arch;
 
 // Per-vertex field samples at the vertex's world position, so mood is continuous across halls. The
 // solids are non-indexed, so most (x, z) pairs repeat: each distinct pair (by its float32 bits) is

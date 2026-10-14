@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { STOPS, WATER, DECAY } from './mood.js';
 import { SKY_GLSL, SKY_UNIFORMS } from './skydome.js';
-import { MARBLES } from './marble.js';
+import { MARBLES, PATTERNS, MAX_FOOTPRINT } from './marble.js';
 
-export const KIND = { arch: 0, statue: 1, pool: 2 };
+export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3 };
 
 const v3 = (a) => new THREE.Vector3(...a);
 const stopUniforms = () => ({
@@ -84,37 +84,134 @@ const SURFACE_VERT = /* glsl */`
 // Marble: the hall's stone tints the mood's stone at MARBLE_WEIGHT, so a dark marble darkens a bright
 // hall without blacking it out, and veins mix the vein colour in on top at VEIN_WEIGHT. Two vein
 // families, each a sine drifting along a fixed direction and meandered by four octaves of smooth
-// value noise (skyNoise, SKY_GLSL, reused rather than duplicated); a vein is where the sine crosses
-// zero. Its width is a world width (thicker and thinner along the vein) measured in pixels through
-// the sine's screen-space gradient, so a vein stays a thin line where the turbulence flattens the
-// sine, rather than swelling into a blotch, and fades out, not aliases, once thinner than a pixel.
+// value noise (skyNoise and skyHash, SKY_GLSL, reused rather than duplicated); a vein is where the
+// sine crosses zero. Its width is a world width (thicker and thinner along the vein) measured in
+// pixels through the sine's screen-space gradient, so a vein stays a thin line where the turbulence
+// flattens the sine, rather than swelling into a blotch, and fades out, not aliases, once thinner
+// than a pixel.
+//
+// Floors (KIND.floor) are inlaid with the hall's pattern: chequer (1.2 m squares set diagonally),
+// medallion (rings and an eight-point star at the hall centre) or bands (a 1 m band 0.5 m in from
+// the hall's own outline, round a 0.6 m chequer). Every edge is box-filtered over the pixel.
+//
+// Veins and inlay sit behind distance early-outs, so they cost nothing where they cannot show. No
+// derivative is taken inside those branches (derivatives are undefined in non-uniform control
+// flow): main() takes dFdx/dFdy of the hall-relative position once, up front, into mDx/mDy, and
+// every filter width below goes through them by the chain rule: exactly for the inlay's linear
+// coordinates and distances, and through the noise's analytic gradient for the veins.
 const MARBLE_WEIGHT = '0.6', VEIN_WEIGHT = '0.85';
 const MARBLE_GLSL = /* glsl */`
-  uniform vec3 uMarbleBase, uMarbleVein;
-  uniform float uVeinStrength;
+  uniform vec3 uMarbleBase, uMarbleVein, uInlayA, uInlayB;
+  uniform float uVeinStrength, uPattern;      // pattern: 0 chequer, 1 medallion, 2 bands
+  uniform vec2 uFoot[${MAX_FOOTPRINT}];       // the hall's footprint, hall-relative (x, z)
+  uniform int uFootN;
+  uniform vec2 uHalf;                         // the footprint's half-extents
   #define VEIN_WARP 1.6
+  vec3 mDx, mDy;                              // vP's screen derivatives, set by main()
+  // skyNoise with its gradient: the same trilinear blend of skyHash, written as a polynomial in the
+  // smoothstepped fraction so it differentiates in closed form. xyz: gradient, w: value.
+  vec4 marbleNoise(vec3 x) {
+    vec3 i = floor(x), f = fract(x);
+    vec3 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+    float h0 = skyHash(i), h1 = skyHash(i + vec3(1.0, 0.0, 0.0)), h2 = skyHash(i + vec3(0.0, 1.0, 0.0)), h3 = skyHash(i + vec3(1.0, 1.0, 0.0));
+    float h4 = skyHash(i + vec3(0.0, 0.0, 1.0)), h5 = skyHash(i + vec3(1.0, 0.0, 1.0)), h6 = skyHash(i + vec3(0.0, 1.0, 1.0)), h7 = skyHash(i + vec3(1.0, 1.0, 1.0));
+    float kx = h1 - h0, ky = h2 - h0, kz = h4 - h0;
+    float kxy = h0 - h1 - h2 + h3, kyz = h0 - h2 - h4 + h6, kzx = h0 - h1 - h4 + h5, kxyz = -h0 + h1 + h2 - h3 + h4 - h5 - h6 + h7;
+    return vec4(du * vec3(kx + kxy * u.y + kzx * u.z + kxyz * u.y * u.z,
+                          ky + kyz * u.z + kxy * u.x + kxyz * u.z * u.x,
+                          kz + kzx * u.x + kyz * u.y + kxyz * u.x * u.y),
+                h0 + kx * u.x + ky * u.y + kz * u.z + kxy * u.x * u.y + kyz * u.y * u.z + kzx * u.z * u.x + kxyz * u.x * u.y * u.z);
+  }
   // Smooth signed fbm, about -1..1: bends a vein without creasing it (abs-turbulence makes kinks).
-  float marbleWarp(vec3 q) {
-    float t = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) { t += a * (skyNoise(q) * 2.0 - 1.0); q *= 2.03; a *= 0.4; }
+  // xyz: gradient with respect to q, w: value.
+  vec4 marbleWarp(vec3 q) {
+    vec4 t = vec4(0.0);
+    float a = 0.5, s = 1.0;
+    for (int i = 0; i < 4; i++) { vec4 n = marbleNoise(q); t += a * vec4(n.xyz * 2.0 * s, n.w * 2.0 - 1.0); q *= 2.03; s *= 2.03; a *= 0.4; }
     return t * 2.2;
   }
-  // Coverage, 0..1, of a vein of half-width w metres along the zero set of s. wpp: metres per pixel.
-  float veinLine(float s, float w, float wpp) {
-    float px = abs(s) / max(fwidth(s), 1e-4);   // distance to the zero crossing, in pixels
-    float hw = w / wpp;                           // half-width in pixels
+  // The pixel footprint of a quantity whose gradient (per metre of vP) is g: what fwidth would give.
+  float mWidth(vec3 g) { return abs(dot(g, mDx)) + abs(dot(g, mDy)); }
+  float mWidth2(vec2 g) { return mWidth(vec3(g.x, 0.0, g.y)); }
+  // Coverage, 0..1, of a vein of half-width w metres along the zero set of sin(u); gu: u's gradient.
+  // wpp: metres per pixel.
+  float veinLine(float u, vec3 gu, float w, float wpp) {
+    float px = abs(sin(u)) / max(abs(cos(u)) * mWidth(gu), 1e-4);   // distance to the zero crossing, in pixels
+    float hw = w / wpp;                                              // half-width in pixels
     float hwc = max(hw, 0.5);
     return (1.0 - smoothstep(hwc - 0.5, hwc + 0.5, px)) * clamp(hw * 2.0, 0.0, 1.0);
   }
   // 1 on a vein, 0 in the field.
   float marbleVeins(vec3 p) {
-    float wpp = max(length(fwidth(p)), 1e-5);
+    float wpp = max(length(abs(mDx) + abs(mDy)), 1e-5);
     float width = mix(0.006, 0.03, skyNoise(p * 0.7 + 3.1));   // varies along the vein
     // The drift term sets the veins' run and spacing (a zero crossing about every 3 m); the warp
     // meanders them. Warp much stronger than drift turns the veins into closed contour loops.
-    float main = veinLine(sin(dot(p, vec3(0.62, 0.36, 0.70)) + VEIN_WARP * marbleWarp(p * 0.2)), width, wpp);
-    float fine = veinLine(sin(dot(p, vec3(-0.55, 0.95, 0.80)) + VEIN_WARP * marbleWarp(p * 0.35 + 11.7)), width * 0.45, wpp);
-    return max(main, 0.55 * fine);
+    vec3 d1 = vec3(0.62, 0.36, 0.70), d2 = vec3(-0.55, 0.95, 0.80);
+    vec4 w1 = marbleWarp(p * 0.2), w2 = marbleWarp(p * 0.35 + 11.7);
+    float broad = veinLine(dot(p, d1) + VEIN_WARP * w1.w, d1 + (VEIN_WARP * 0.2) * w1.xyz, width, wpp);
+    float fine = veinLine(dot(p, d2) + VEIN_WARP * w2.w, d2 + (VEIN_WARP * 0.35) * w2.xyz, width * 0.45, wpp);
+    return max(broad, 0.55 * fine);
+  }
+  // A step from 0 to 1 where v crosses edge; w: v's pixel footprint.
+  float aaStep(float edge, float v, float w) { return clamp((v - edge) / max(w, 1e-4) + 0.5, 0.0, 1.0); }
+  // 1 on [0, duty) of every unit period of x, box-filtered over w (the pulse train's integral).
+  float stripe(float x, float duty, float w) {
+    w = max(w, 1e-4);
+    float a = x - 0.5 * w, b = x + 0.5 * w;
+    return ((floor(b) * duty + min(fract(b), duty)) - (floor(a) * duty + min(fract(a), duty))) / w;
+  }
+  // 0 and 1 unit squares, box-filtered over w.
+  float checker(vec2 p, vec2 w) {
+    w = max(w, vec2(1e-4));
+    vec2 i = 2.0 * (abs(fract((p - 0.5 * w) * 0.5) - 0.5) - abs(fract((p + 0.5 * w) * 0.5) - 0.5)) / w;
+    return 0.5 - 0.5 * i.x * i.y;
+  }
+  // Distance from p to the footprint's outline, positive inside and negative in doorways and
+  // corridors (x), and the direction of its gradient (yz).
+  vec3 footDist(vec2 p) {
+    float d = 1e9, s = 1.0;
+    vec2 nb = vec2(1.0, 0.0);
+    for (int i = 0; i < ${MAX_FOOTPRINT}; i++) {
+      if (i >= uFootN) break;
+      vec2 vi = uFoot[i], vj = uFoot[i == 0 ? uFootN - 1 : i - 1];
+      vec2 e = vj - vi, w = p - vi, b = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0);
+      float bb = dot(b, b);
+      if (bb < d) { d = bb; nb = b; }
+      bvec3 c = bvec3(p.y >= vi.y, p.y < vj.y, e.x * w.y > e.y * w.x);
+      if (all(c) || all(not(c))) s = -s;
+    }
+    return vec3(-s * sqrt(d), nb / max(length(nb), 1e-6));
+  }
+  // The floor's marble at hall-relative (x, z): the base inlaid with the two inlay colours.
+  vec3 inlay(vec2 p) {
+    if (uPattern < 0.5) {
+      // Chequer: 1.2 m squares set diagonally.
+      const float k = 0.70710678 / 1.2;
+      return mix(uMarbleBase, uInlayA, checker(vec2(p.x + p.y, p.x - p.y) * k, vec2(mWidth2(vec2(k, k)), mWidth2(vec2(k, -k)))));
+    }
+    if (uPattern < 1.5) {
+      // Medallion: rings and an eight-point star, centred on the hall. Guarded at the centre, where
+      // atan(0, 0) is undefined and the radial direction has no length.
+      float r = length(p), R = 0.8 * min(uHalf.x, uHalf.y), rc = max(r, 1e-3);
+      vec2 dir = r > 1e-3 ? p / r : vec2(1.0, 0.0);
+      float wr = mWidth2(dir);
+      float t = fract(atan(p.y, r > 1e-3 ? p.x : 1.0) * 8.0 / 6.2831853);
+      float point = abs(t - 0.5) * 2.0;   // 1 at a star point
+      float starR = R * mix(0.28, 0.55, point);
+      // The star's edge, starR - r, turns with the angle, so its gradient has a tangential term.
+      vec2 gStar = (R * 0.27 * sign(t - 0.5) * 16.0 / 6.2831853) * vec2(-p.y, p.x) / (rc * rc) - dir;
+      vec3 c = mix(uMarbleBase, uInlayB, aaStep(0.0, R - r, wr) * aaStep(0.0, r - 0.6 * R, wr) * stripe(r / 0.9, 0.33, wr / 0.9));
+      c = mix(c, uInlayA, aaStep(0.0, starR - r, mWidth2(gStar)));
+      return mix(c, uInlayB, aaStep(0.0, 0.1 * R - r, wr));
+    }
+    // Bands: a 1 m band 0.5 m in from the hall's own outline, round a field of small chequer;
+    // outside the outline (thresholds, corridors) plain base.
+    vec3 f = footDist(p);
+    float wd = mWidth2(f.yz);
+    vec3 c = mix(uMarbleBase, uInlayA, checker(p / 0.6, vec2(mWidth2(vec2(1.0, 0.0)), mWidth2(vec2(0.0, 1.0))) / 0.6));
+    c = mix(c, uInlayB, aaStep(0.5, f.x, wd) * (1.0 - aaStep(1.5, f.x, wd)));
+    return mix(uMarbleBase, c, aaStep(0.0, f.x, wd));
   }
 `;
 
@@ -137,13 +234,21 @@ const SURFACE_FRAG = /* glsl */`
     float h = vH;
     // Bounded kind tests, so a later kind cannot be mistaken for a pool.
     float isStatue = step(0.5, vKind) * step(vKind, 1.5), isPool = step(1.5, vKind) * step(vKind, 2.5);
+    float isFloor = step(2.5, vKind) * step(vKind, 3.5);
+    // Taken here, in uniform control flow, for the filters behind the early-outs below.
+    mDx = dFdx(vP); mDy = dFdy(vP);
     // Veins calm between 10 and 15 m of the flattened distance the fog uses (horizontal plus a third
     // of the vertical, turned to world orientation by the view rotation), so vaults overhead keep
-    // theirs; fainter on statues.
+    // theirs; fainter on statues. Past 15 m they are skipped.
     vec3 off = (vec4(vV, 0.0) * viewMatrix).xyz;
-    float near = 1.0 - smoothstep(10.0, 15.0, length(off.xz) + abs(off.y) / 3.0);
-    float vein = marbleVeins(vP) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
-    vec3 stone = m.stone * mix(mix(vec3(1.0), uMarbleBase, ${MARBLE_WEIGHT}), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
+    float flatDist = length(off.xz) + abs(off.y) / 3.0;
+    float near = 1.0 - smoothstep(10.0, 15.0, flatDist);
+    float vein = 0.0;
+    if (near > 0.0) vein = marbleVeins(vP) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
+    // Floors are inlaid, out to fogFar, where the distance fog is total and hides them.
+    vec3 marble = uMarbleBase;
+    if (isFloor > 0.5 && flatDist < m.fogFar) marble = inlay(vP.xz);
+    vec3 stone = m.stone * mix(mix(vec3(1.0), marble, ${MARBLE_WEIGHT}), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
     stone *= 1.0 + 0.12 * isStatue;   // statues a touch lighter
     stone *= 1.0 - 0.25 * isPool;     // pool floors darker
     vec3 hemi = mix(m.bounce, m.sky, n.y * 0.5 + 0.5);
@@ -161,13 +266,18 @@ const SURFACE_FRAG = /* glsl */`
   }
 `;
 
-// marble: a MARBLES entry.
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara } = {}) {
+// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z.
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [] } = {}) {
+  const n = footprint.length / 2;
+  const foot = Array.from({ length: MAX_FOOTPRINT }, (_, i) => new THREE.Vector2(footprint[2 * i] ?? 0, footprint[2 * i + 1] ?? 0));
+  const half = new THREE.Vector2(Math.max(0, ...foot.slice(0, n).map(p => Math.abs(p.x))), Math.max(0, ...foot.slice(0, n).map(p => Math.abs(p.y))));
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
     // SKY_UNIFORMS spread, never cloned, as for the portals: the dome's update moves the fog target.
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
-      uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength } },
+      uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength },
+      uInlayA: { value: v3(marble.inlay[0]) }, uInlayB: { value: v3(marble.inlay[1]) }, uPattern: { value: PATTERNS.indexOf(pattern) },
+      uFoot: { value: foot }, uFootN: { value: n }, uHalf: { value: half } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
