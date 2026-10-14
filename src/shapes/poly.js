@@ -81,3 +81,33 @@ export function aroundWell(points, cx, cz, wx, wz) {
     clipBox(points, cx - wx, cx + wx, cz + wz, BIG),
   ].filter(Boolean);
 }
+
+// Keeps the part of a polygon on the left of the line through o = [x, z] along d = [dx, dz] (in
+// (x, z), counter-clockwise is left), interpolating every coordinate across the cut.
+function clipLeft(pts, o, d) {
+  const out = [], side = (p) => d[0] * (p[2] - o[1]) - d[1] * (p[0] - o[0]);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], sa = side(a), sb = side(b), ia = sa >= -EPS, ib = sb >= -EPS;
+    if (ia) out.push(a);
+    if (ia !== ib) { const t = sa / (sa - sb); out.push(a.map((c, k) => c + (b[k] - c) * t)); }
+  }
+  return out;
+}
+
+// The floor minus a pool: one piece per pool edge, the part of the floor inside the wedge from the
+// hall centre (cx, cz) through that edge's two ends, beyond the edge. pool: hall-relative [[x, z], ...]
+// (hall.pool). Needs the pool star-shaped about the centre and inside the floor, which poolOutline
+// guarantees (a smoothed radial 10-gon at most 0.95 of the way to the nearest wall, clearing every
+// footprint edge by 0.85 m or more over 7000 pools). A floor with a pool in it, as simple polys.
+export function aroundPool(points, cx, cz, pool) {
+  const ring = signedArea2(pool) < 0 ? [...pool].reverse() : pool, pieces = [];
+  for (let k = 0; k < ring.length; k++) {
+    const a = ring[k], b = ring[(k + 1) % ring.length];
+    let p = clipLeft(points, [cx, cz], a);                              // counter-clockwise of the ray through a
+    p = clipLeft(p, [cx, cz], [-b[0], -b[1]]);                          // clockwise of the ray through b
+    p = clipLeft(p, [cx + a[0], cz + a[1]], [a[0] - b[0], a[1] - b[1]]); // beyond the edge, away from the centre
+    p = dedupe(p);
+    if (p.length >= 3 && Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))) > 1e-6) pieces.push(p);
+  }
+  return pieces;
+}

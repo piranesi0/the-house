@@ -4,7 +4,7 @@ import { buildCross } from './cross.js';
 import { buildColonnade } from './colonnade.js';
 import { buildStairwell, WELL } from './stairwell.js';
 import { lines, poly } from './ir.js';
-import { aroundWell } from './poly.js';
+import { aroundWell, aroundPool } from './poly.js';
 import { facingToward } from './common.js';
 import { STOREY } from '../hall.js';
 
@@ -33,6 +33,11 @@ export function buildHall(hall, conns, opts = {}) {
       slots.push({ x, z, facing: facingToward(-dx, 0), maxScale: 1, kind: 'niche' });
     }
   }
+  // A pool is cut out of the floor, so the mirror below it shows through the water (stair halls and
+  // the halls above them are always dry, so this never meets the well's cut).
+  if (hall.pool) prims = prims.flatMap(p => (p.kind === 'poly' && p.name === 'floor')
+    ? aroundPool(p.points, hall.cx, hall.cz, hall.pool).map(pts => poly(pts, 'floor'))
+    : [p]);
   if (opts.floorHole) {
     const { cx, cz, floorY: f } = hall, { hx, hz } = WELL;
     prims = [...cutWell(prims), lines([[cx - hx, f, cz - hz], [cx + hx, f, cz - hz], [cx + hx, f, cz + hz], [cx - hx, f, cz + hz], [cx - hx, f, cz - hz]])];

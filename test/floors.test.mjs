@@ -15,7 +15,7 @@ import { covers } from './helpers.mjs';
 const seed = fnv1a('ravens'), fields = makeFields(seed);
 const polyArea = (p) => Math.abs(signedArea2(p.points.map(([x, , z]) => [x, z])));
 
-test('every hall floor is filled to its footprint, and only a stair hall has a hole', () => {
+test('every hall floor is filled to its footprint, less the well in a stair hall and the pool in a wet hall', () => {
   const shapes = new Set();
   let stairs = 0;
   for (let i = 0; i < 1000; i++) {
@@ -33,7 +33,8 @@ test('every hall floor is filled to its footprint, and only a stair hall has a h
     const foot = Math.abs(signedArea2(footprint(hall)));
     const area = floors.reduce((s, f) => s + polyArea(f), 0);
     const hole = hall.isStair ? 4 * WELL.hx * WELL.hz : 0;
-    assert.ok(Math.abs(area - (foot - hole)) < 1e-6, `${hall.shape} floor area ${area} vs ${foot - hole}`);
+    const pool = hall.pool ? Math.abs(signedArea2(hall.pool)) : 0;
+    assert.ok(Math.abs(area - (foot - hole - pool)) < 1e-6, `${hall.shape} floor area ${area} vs ${foot - hole - pool}`);
     const carea = ceilings.reduce((s, f) => s + polyArea(f), 0);
     assert.ok(Math.abs(carea - (foot - hole)) < 1e-6, `${hall.shape} ceiling area ${carea} vs ${foot - hole}`);
     if (!hall.isStair) continue;
@@ -51,6 +52,29 @@ test('every hall floor is filled to its footprint, and only a stair hall has a h
   }
   assert.equal(shapes.size, 5);
   assert.ok(stairs >= 10);
+});
+
+test('a pool is cut out of its hall floor, and the ceiling over it stays whole', () => {
+  let wet = 0;
+  for (let i = 0; i < 1000; i++) {
+    const x = (i * 31) % 201 - 100, z = (i * 17) % 201 - 100;
+    const hall = hallParams(seed, x, 0, z, fields);
+    if (!hall.pool) continue;
+    wet++;
+    const built = buildHall(hall, connsFor(seed, hall, fields));
+    const floors = built.prims.filter(p => p.kind === 'poly' && p.name === 'floor');
+    assert.equal(floors.length, hall.pool.length, `${hall.shape} floor pieces`);
+    const pos = floors.flatMap(f => polyPositions(f)), { cx, cz } = hall;
+    assert.ok(!covers(pos, cx, cz), `${hall.shape} pool centre covered`);
+    for (const [px, pz] of hall.pool) {
+      assert.ok(!covers(pos, cx + 0.95 * px, cz + 0.95 * pz), `${hall.shape} pool covered`);
+      assert.ok(covers(pos, cx + 1.05 * px, cz + 1.05 * pz), `${hall.shape} floor beside the pool missing`);
+    }
+    const ceilings = built.prims.filter(p => p.kind === 'poly' && p.name === 'ceiling');
+    assert.equal(ceilings.length, 1);
+    assert.ok(covers(polyPositions(ceilings[0]), cx, cz), 'ceiling over the pool cut');
+  }
+  assert.ok(wet > 100, `only ${wet} wet halls`);
 });
 
 test('every doorway has a threshold floor through the wall thickness', () => {

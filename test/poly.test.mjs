@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { signedArea2, triangulate, polyPositions, clipBox, aroundWell } from '../src/shapes/poly.js';
+import { signedArea2, triangulate, polyPositions, clipBox, aroundWell, aroundPool } from '../src/shapes/poly.js';
+import { poolOutline } from '../src/hall.js';
+import { stream, fnv1a } from '../src/rng.js';
+import { footprint } from '../src/shapes/footprint.js';
 import { poly, boundsOf, translatePrims } from '../src/shapes/ir.js';
 import { covers } from './helpers.mjs';
 
@@ -57,6 +60,32 @@ test('aroundWell leaves exactly the well uncovered, for a rect, an octagon and a
     assert.ok(!covers(pos, 0, 0) && !covers(pos, 2.9, 4.9) && !covers(pos, -2.9, -4.9), 'well covered');
     assert.ok(covers(pos, 3.5, 0) && covers(pos, -3.5, 0) && covers(pos, 0, 5.5) && covers(pos, 0, -5.5), 'floor beside the well missing');
   }
+});
+
+test('aroundPool leaves exactly the pool uncovered, for a rect, an octagon and a cross', () => {
+  for (const shape of ['square', 'octagon', 'cross']) for (let i = 0; i < 20; i++) {
+    const hall = { shape, cx: 0, cz: 0, hx: 9, hz: 9 };
+    const pts = footprint(hall).map(([x, z]) => [x, 0, z]);
+    const pool = poolOutline(stream(fnv1a('ravens'), i, 0, 0, 'hall'), hall.hx, hall.hz);
+    const pieces = aroundPool(pts, 0, 0, pool);
+    assert.equal(pieces.length, pool.length, `${shape}: one piece per pool edge`);
+    const total = pieces.reduce((s, p) => s + Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))), 0);
+    near(total, Math.abs(signedArea2(footprint(hall))) - Math.abs(signedArea2(pool)), 1e-6);
+    const pos = pieces.flatMap(p => polyPositions(poly(p, 'floor')));
+    assert.ok(!covers(pos, 0, 0), `${shape}: pool centre covered`);
+    for (const [x, z] of pool) {
+      assert.ok(!covers(pos, 0.95 * x, 0.95 * z), `${shape}: pool covered at ${x}, ${z}`);
+      assert.ok(covers(pos, 1.05 * x, 1.05 * z), `${shape}: floor beside the pool missing at ${x}, ${z}`);
+    }
+    for (const p of pieces) assert.ok(p.every(q => q[1] === 0), 'piece off the floor');
+  }
+});
+
+test('aroundPool takes the pool in either winding', () => {
+  const pts = footprint({ shape: 'square', cx: 4, cz: -2, hx: 9, hz: 9 }).map(([x, z]) => [x, 0, z]);
+  const pool = poolOutline(stream(fnv1a('ravens'), 3, 0, 0, 'hall'), 9, 9);
+  const area = (ps) => ps.reduce((s, p) => s + Math.abs(signedArea2(p.map(([x, , z]) => [x, z]))), 0);
+  near(area(aroundPool(pts, 4, -2, pool)), area(aroundPool(pts, 4, -2, [...pool].reverse())), 1e-9);
 });
 
 test('ir knows poly: translate moves its points and boundsOf wraps them', () => {
