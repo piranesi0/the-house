@@ -20,7 +20,9 @@
 - Fog far by light: 18 m (chiaroscuro) to 44 m (luminous), about 31 m at dusk. Water fill opacity capped at `0.6`.
 - Windows per hall: luminous 2 to 4, dusk 1 to 2, chiaroscuro 1 to 2. Window top within `1.5` m of the ceiling; no window overlaps its wall's doorway opening.
 - Budget: 60 fps; at most 100 draw calls in view; about 600,000 triangles in view; at most 16 ms of hall building per crossing, else builds spread one per frame.
-- Draw calls per hall: surfaces, lines, effects; a pool hall adds its water fill and mirror.
+- Draw calls per hall: surfaces, lines, effects, window portals. A shaded pool's mirror rides in its hall's own line and
+  surface meshes; every loaded pool's water sheet is one shared mesh and every loaded cloud hall's clouds one more, so
+  water and clouds add at most two calls in all (phase C, as built; was "a pool hall adds its water fill and mirror").
 - URL flags `look` (`shaded` default, `lines`) and `debug` (valueless) live in the fragment and survive `writeFragment`.
 - Commits are small and frequent, with the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
@@ -1837,7 +1839,8 @@ What changed from the old text, and why:
   smoothed radial 10-gon, star-shaped about the hall centre, and clears every footprint edge by at least 0.85 m (checked
   over 7000 pools on three seeds). The ceiling is not cut.
 - **What is under the water: the reflected vault.** The shaded mirror reflects what stands in the pool and the hall's own
-  ceiling poly(s), turned over about the water line. So under the water, `ceiling - 2 * depth` metres below the floor
+  ceiling poly(s), turned over about the water line [superseded in Task 13 fix round 1: about the floor, and the hall's
+  walls and columns are mirrored too; see Task 15 Step 3]. So under the water, `ceiling - 2 * depth` metres below the floor
   (16-40 m), lies the vault seen in the pool: stone, lit as the vault is (bounce from below), dimmed to 0.6. Not nothing:
   through the opening you would see the dome below the horizon, which is the hall's haze. A luminous pool would then read
   as a pale hole where it should read darker. Not a separate dim floor: a reflected vault is what a mirror pool shows, so
@@ -1852,7 +1855,9 @@ What changed from the old text, and why:
   mirror surface would have added two more per pool hall (measured: 136). So phase C now cuts calls:
   - the shaded mirror goes into the hall's own line and surface meshes (`buildGroup` gains `mirror`). The parts are mirrored
     on the CPU with the winding reversed (`mirrorTriangles`, `mirrorSegments`, pure), not hung under a `scale.y = -1` group.
-    They are cut at the water sheet: the lines on the CPU, the solids by a `discard` in the shader. They are shaded as their
+    They are cut at the water sheet: the lines on the CPU, the solids by a `discard` in the shader [superseded in Task 13
+    fix rounds 1-2 and final review C I-2: cut at the floor and seen only where the eye ray crosses the floor inside the
+    pool outline, for surfaces and lines alike]. They are shaded as their
     originals through a `KIND.mirrored` offset on the per-vertex kind;
   - every loaded pool's water sheet is **one mesh** with per-vertex mood, and it draws v0's 1 m grid in its shader;
   - so a shaded pool hall costs 4 calls, not 6. Measured after Tasks 13-14: **worst 86** (HEAD 109) over the same views,
@@ -2928,26 +2933,40 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 Alex walks it; the controller records it. Nothing is pushed from this task without Alex's go.
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-10-13-the-house-look-design.md` (append to the Status line; amend §2's cost bullet and §6's mirror bullet)
+- Modify: `docs/superpowers/specs/2026-10-13-the-house-look-design.md` (append to the Status line; amend §2's effects item,
+  mirror bullet and cost bullet, §3's pool-floor sentence, §6's water, mirror and clouds bullets, and §7's draw-call budget
+  bullet, as Step 3 lists)
+
+What was built differs from the spec, and from this plan's own Phase C notes, in rulings recorded in the ledger
+(`.superpowers/sdd/2026-10-13-the-house-look/progress.md`) and in `final-review-c.md`. Step 3 writes them into the spec.
+The walk checklist in `final-review-c.md` is the full list; Step 1 is its core.
 
 - [ ] **Step 1: The walk (spec done-when 1 and 3)**
 
 Alex opens the deployed build with `debug`:
-- **Pools:** `#s=ravens&x=-7&z=0&debug` (octagon, 1 m), `#s=ravens&x=-3&z=-2&debug` (colonnade, colossus in the pool),
-  then the drowned block round (-4,-4). Check: the pools read as mirrors from a distance and as clear water close to; the
-  reflected vault is dim stone, not a bright hole; no seam where the sheet meets the cut floor (the sheet floats `depth` above
-  the cut edge, so a 1 m pool shows its edge through the water); mirrored statues and columns are shaded and dimmer;
-  nothing mirrored pokes up through the water.
-- **Clouds:** `#s=ravens&x=-13&z=-13&debug`, look up the shaft.
-- **Lines:** `look=lines` at (-7,0) and (-13,-13): v0 exactly.
-- **Low views:** from a stairwell's lower landing, look out under the neighbouring floors. Note whether a neighbour's
-  reflected vault or mirror shows there (they hang 16-40 m below the floor).
+- **Pools:** `#s=ravens&x=-7&z=0&debug` (octagon, 1 m, colossus in the pool), `#s=ravens&x=-3&z=-2&debug` (colonnade,
+  colossus in the pool, columns standing in the water), then the drowned block round (-4,-4). Check: the pools read as
+  mirrors from a distance and as clear water close to; through the pool, the mirrored hall (walls, columns, vault, what
+  stands in the pool) is dim stone, not a bright hole; the sheet lies flush on the floor (`SHEET_Y = 0.02` above it), so
+  there is no visible edge (note any thin unwatered sliver at the rim, about 5 px at 3 m); mirrored statues, colossi and
+  columns are shaded and dimmer (0.6); nothing mirrored pokes up through the water; doorway gaps in the mirror show haze
+  (connectors are not mirrored). Walk into the 1 m pool at (-7,0): the eye drops to the wading depth while the water is
+  drawn at the floor; note whether that reads acceptably.
+- **Lines fog like the surfaces:** at (3,0) (dark, wet) look up at the vault lines against a dry hall's; at roofless
+  (-1,-4), the wall-top lines against the sky (final review C I-1, fixed).
+- **Clouds:** `#s=ravens&x=-13&z=-13&debug`, and the luminous stair halls (-1,-1) and (-2,1): look up the shaft; the drift
+  fades at the wrap, and no cloud prints over the sun or stars.
+- **Lines:** `look=lines` at (-7,0) and (-13,-13): v0 exactly (the swaying line mirror of the ordinary statues, wire clouds).
+- **Low views:** from the lower landing of stair hall (0,-3), look out under its wet neighbours (-1,-3) and (1,-3): no
+  mirror shows (each mirror is seen only through its own pool). Look down the wells at (4,0) and (-3,-3): a pool hall under
+  a stairwell shows the void below its water (accepted).
 
 - [ ] **Step 2: The budget (spec done-when 2)**
 
-From the overlay, in the drowned block round (-4,-4) and in the busiest bright quarter Alex finds, record fps, worst frame,
-calls, tris and the build max. All within budget: calls at most 100, build at most 16 ms. If not, phase C does not ship
-(spec §7).
+From the overlay, in the drowned block round (-4,-4) (also looking down across the pools) and in the busiest bright
+quarter Alex finds, and at the cloud-heavy (-14,-15), record fps, worst frame, calls, tris and the build max, and the worst
+frame on the first crossing that brings a pool or a stair hall's clouds into view (shader compiles). All within budget:
+calls at most 100, build at most 16 ms. If not, phase C does not ship (spec §7).
 
 - [ ] **Step 3: Record**
 
@@ -2955,14 +2974,43 @@ Append to the look spec's Status line, after the Phase A sentence, filled from S
 
 ```markdown
 Phase C shipped <date>: fps <n> (worst frame <n> ms), calls <n> in the drowned block round ravens (-4,-4) (<n> at
-743ed3f), tris <n>k, worst hall build <n> ms, on Alex's machine. Pools are cut out of the floor; the shaded mirror
-(statues, colossi, columns and the reflected vault) is built into its hall's own meshes, and every pool's water is one mesh.
+743ed3f), tris <n>k, worst hall build <n> ms, on Alex's machine. Pools are cut out of the floor and a flush water sheet
+lies over the cut; the shaded mirror (what stands in the pool, colossi included, the hall's walls and columns, and the
+vault) is built into its hall's own meshes and seen only through the pool. All water is one mesh; all clouds are one mesh.
 ```
 
-In §2, change the cost bullet to: `- **Cost:** about four draw calls per hall (lines, surfaces, effects, window portals);
-the shaded pools' mirrors ride in their halls' meshes, all water sheets are one mesh, and each cloud hall is one more.`
-In §6, change the mirror bullet's last sentence to: `Their parts are turned over on the CPU, winding reversed, and built
-into the hall's own meshes.`
+Then amend the body. Each change replaces the sentence named; the rulings behind them are in the ledger.
+
+- **§2 item 3 (Effects):** drop "and the shaded water surface (§6)". Add: `Water and clouds are not in the effects mesh:
+  water needs a non-additive blend and clouds hang over another storey, so each is one shared mesh across all loaded halls
+  (§6).`
+- **§2 Mirrors bullet:** replace with: `- **Mirrors** (shaded look): a pool hall's mirror is built into the hall's own line and
+  surface meshes. Its parts are turned over on the CPU about the hall floor, winding reversed, cut at the floor, and shaded
+  as their originals, dimmed to 0.6. A mirrored fragment is kept only when the camera is above the floor and its eye ray
+  crosses the floor inside the pool outline, so the mirror shows through the pool and nowhere else (not under a
+  neighbouring floor from a stair hall's lower landing). Only pool halls' materials compile that test. look=lines keeps
+  v0's separate swaying line mirror.`
+- **§2 Cost bullet:** replace with: `- **Cost:** about four draw calls per hall (lines, surfaces, effects, window portals);
+  the shaded pools' mirrors ride in their halls' meshes, all water sheets are one mesh and all clouds one more, so water
+  and clouds cost at most two calls in all.`
+- **§3 Surface colour bullet:** replace "The floor under a pool is darker, by the same attribute." with: `There is no floor
+  under a pool: it is cut out of the floor (§6), so the pool kind is unused.`
+- **§6 Water surface bullet:** replace its first sentence with: `A translucent sheet tinted from haze and sky, lying flush on
+  the floor (2 cm above it) over the pool cut out of the floor, and carrying v0's 1 m grid in its shader. Every loaded
+  pool's sheet is one mesh. The player still wades to the pool's depth; only the drawing is flush.` Delete "The floor
+  beneath a pool is darker (§3)."
+- **§6 Mirrors bullet:** replace with: `- **Mirrors.** In the shaded look a pool mirrors what stands in it (statues and, in the
+  shaded look only, colossi), the colonnade columns standing in the water, the hall's own walls and its vault: about the
+  floor, cut there, dimmer than the originals, seen only through the pool (§2). Connectors and dry statues beside the pool
+  are not mirrored. The mirror is part of the static hall mesh, so it loses v0's 5 cm sway; the grid ripple carries the
+  motion. A roofless pool hall, and a pool hall under a stairwell, show the haze void past their mirrored walls. Windows
+  and shafts are not mirrored. look=lines keeps v0: the swaying line mirror of the ordinary statues, no colossi.`
+- **§6 Clouds bullet:** replace "merged into one mesh per hall" with: `merged into one mesh shared by every loaded cloud hall
+  (one draw call in all), drifting in the vertex shader and fading at the wrap instead of jumping. look=lines keeps v0's
+  wire blobs.`
+- **§7 Budget, draw calls:** replace "the three-meshes-per-hall rule of §2: surfaces, lines, effects, with water and clouds
+  inside the effects mesh" with: `the per-hall meshes of §2 (lines, surfaces, effects, window portals), the mirrors inside
+  them, and water and clouds as one shared mesh each.`
 
 ```bash
 git add docs/superpowers/specs/2026-10-13-the-house-look-design.md
