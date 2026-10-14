@@ -123,13 +123,14 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
 const EFFECTS_VERT = /* glsl */`
   attribute float alpha;
   attribute vec3 tint;
+  attribute float fogK;
   varying vec3 vV, vTint;
   varying vec2 vUv;
-  varying float vAlpha, vH;
+  varying float vAlpha, vH, vFogK;
   #include <clipping_planes_pars_vertex>
   void main() {
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vV = mvPosition.xyz; vH = position.y; vUv = uv; vAlpha = alpha; vTint = tint;
+    vV = mvPosition.xyz; vH = position.y; vUv = uv; vAlpha = alpha; vTint = tint; vFogK = fogK;
     gl_Position = projectionMatrix * mvPosition;
     #include <clipping_planes_vertex>
   }
@@ -140,14 +141,15 @@ const EFFECTS_FRAG = /* glsl */`
   uniform vec3 uFields;
   varying vec3 vV, vTint;
   varying vec2 vUv;
-  varying float vAlpha, vH;
+  varying float vAlpha, vH, vFogK;
   #include <clipping_planes_pars_fragment>
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(uFields);
     // Soft edges across the quad; uv.x runs across a shaft or glow, uv.y along it.
     float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(0.0, 0.35, 1.0 - vUv.x);
-    float a = vAlpha * edge * (1.0 - fogAmount(m, vV, vH));
+    // vFogK: 1 for shafts and patches, 1/3 for window glows (see effects.js).
+    float a = vAlpha * edge * (1.0 - fogAmount(m, vV, vH) * vFogK);
     // Premultiplied: the material sets premultipliedAlpha, so additive blending is ONE, ONE.
     gl_FragColor = vec4(vTint * a, a);
   }
@@ -189,7 +191,9 @@ const PORTAL_FRAG = /* glsl */`
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(uFields);
-    gl_FragColor = vec4(mix(skyColour(vDir), m.haze, fogAmount(m, vV, vH)), 1.0);
+    // A third of the wall's fog: windows sit 16-26 m from the eye, past a dark hall's fog, and as
+    // the hall's light source they must still read through the haze.
+    gl_FragColor = vec4(mix(skyColour(vDir), m.haze, fogAmount(m, vV, vH) / 3.0), 1.0);
   }
 `;
 export function portalMaterial({ fields = [0.5, 0, 0] } = {}) {

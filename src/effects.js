@@ -9,20 +9,22 @@ const GLOW = [1.0, 0.95, 0.85], SHAFT = [1.0, 0.93, 0.8];
 // out = windowsFor(...). Returns null when the hall has no windows.
 export function buildEffects(hall, out) {
   if (!out.windows.length) return null;
-  const pos = [], uv = [], alpha = [], tint = [];
+  const pos = [], uv = [], alpha = [], tint = [], fogK = [];
   const rel = ([x, y, z]) => [x - hall.cx, y - hall.floorY, z - hall.cz];
-  // A quad from four corners (a b c d in order round the quad) with per-corner alpha.
-  const quad = (a, b, c, d, al, colour) => {
+  // A quad from four corners (a b c d in order round the quad) with per-corner alpha; fk scales its fog.
+  const quad = (a, b, c, d, al, colour, fk = 1) => {
     const corners = [a, b, c, d].map(rel), order = [0, 1, 2, 0, 2, 3];
-    for (const i of order) { pos.push(...corners[i]); uv.push(...[[0, 0], [1, 0], [1, 1], [0, 1]][i]); alpha.push(al[i]); tint.push(...colour); }
+    for (const i of order) { pos.push(...corners[i]); uv.push(...[[0, 0], [1, 0], [1, 1], [0, 1]][i]); alpha.push(al[i]); tint.push(...colour); fogK.push(fk); }
   };
   // A halo over the sky portal behind it, not a second pane: kept low so it does not double the
   // pane's brightness or wash out the night stars.
   const glowA = 0.1 + 0.25 * hall.light;
+  // The glow takes a third of the fog, like the pane under it: windows sit 16-26 m up and away, past
+  // a dark hall's fog, and as the hall's light source they must still read through the haze.
   for (const w of out.windows) {
     const [cx, cy, cz] = w.c, hx = w.d[0] * w.w / 2, hz = w.d[1] * w.w / 2, nx = w.n[0] * 0.02, nz = w.n[1] * 0.02;
     quad([cx - hx + nx, cy - w.h / 2, cz - hz + nz], [cx + hx + nx, cy - w.h / 2, cz + hz + nz],
-      [cx + hx + nx, cy + w.h / 2, cz + hz + nz], [cx - hx + nx, cy + w.h / 2, cz - hz + nz], [glowA, glowA, glowA, glowA], GLOW);
+      [cx + hx + nx, cy + w.h / 2, cz + hz + nz], [cx - hx + nx, cy + w.h / 2, cz - hz + nz], [glowA, glowA, glowA, glowA], GLOW, 1 / 3);
   }
   for (const s of out.shafts) {
     const [fx, fy, fz] = s.from, [tx, ty, tz] = s.to;
@@ -45,6 +47,7 @@ export function buildEffects(hall, out) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('alpha', new THREE.Float32BufferAttribute(alpha, 1));
   g.setAttribute('tint', new THREE.Float32BufferAttribute(tint, 3));
+  g.setAttribute('fogK', new THREE.Float32BufferAttribute(fogK, 1));
   const mesh = new THREE.Mesh(g, effectsMaterial({ fields: [hall.light, hall.water, hall.decay] }));
   mesh.name = 'effects'; mesh.renderOrder = 2;
   return mesh;
