@@ -4,6 +4,7 @@ import { buildHall } from './shapes/index.js';
 import { buildConnector } from './shapes/connector.js';
 import { placeStatues } from './statues/place.js';
 import { placeColossus } from './statues/colossus.js';
+import { isRoofless } from './roof.js';
 import { translatePrims } from './shapes/ir.js';
 import { buildGroup, disposeGroup } from './build.js';
 import { surfaceMaterial } from './material.js';
@@ -49,7 +50,7 @@ export class World {
     const t0 = performance.now();
     const hall = this.hall(x, y, z);
     const conns = connsFor(this.seedHash, hall, this.fields);
-    const built = buildHall(hall, conns, opts);
+    const built = buildHall(hall, conns, isRoofless(this.seedHash, hall) ? { ...opts, roofless: true } : opts);
     const prims = [...built.prims], boxes = [...built.boxes], floors = [...built.floors];
     const statues = placeStatues(this.seedHash, hall, built.slots, built.boxes);
     // A colossus goes in after the ordinary statues and around them, at y = 0 only (the vista halls

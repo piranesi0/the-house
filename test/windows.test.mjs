@@ -9,6 +9,8 @@ import { placeStatues } from '../src/statues/place.js';
 import { footprint } from '../src/shapes/footprint.js';
 import { WELL } from '../src/shapes/stairwell.js';
 import { footprintEdges, windowsFor, moodBand, PATCH, HEIGHT_SHARE, ELEVATION } from '../src/windows.js';
+import { isRoofless } from '../src/roof.js';
+import { placeColossus } from '../src/statues/colossus.js';
 
 const seed = fnv1a('ravens'), fields = makeFields(seed);
 const RANGE = { luminous: [2, 4], dusk: [1, 2], chiaroscuro: [1, 2] };
@@ -39,6 +41,8 @@ test('windows sit on their wall, high, clear of the doorway, in the mood\'s coun
   for (let i = 0; i < 600; i++) {
     const [x, z] = cell(i);
     const { hall, conns, statues } = build(x, z);
+    // A roofless hall has no windows at all; roof.test.mjs covers it.
+    if (isRoofless(seed, hall)) continue;
     const out = windowsFor(seed, hall, conns, statues);
     const band = moodBand(hall.light); seen[band]++;
     const [lo, hi] = RANGE[band];
@@ -221,4 +225,52 @@ test('every landing patch stays inside the footprint and off the stairwell (D6)'
     });
   }
   assert.ok(n > 3000, `only ${n} shafts`);
+});
+
+test('when no random layout fits, the fallback windows are 30% of the ceiling tall (D8)', () => {
+  // A 1.8 m square bay with no doorways in a luminous hall: two windows of at least 0.8 m never fit
+  // its 1.2 m clear span at random, so the fallback lays them out.
+  let hall = null;
+  for (let x = 0; !hall; x++) {
+    const h = { ...hallParams(seed, x, 0, 0, fields), shape: 'square', hx: 0.9, hz: 0.9, light: 0.9, isStair: false, ceiling: 30 };
+    if (!isRoofless(seed, h)) hall = h;
+  }
+  const out = windowsFor(seed, hall, {}, []);
+  assert.equal(out.windows.length, 2, 'the fallback lays out exactly the band minimum');
+  const top = hall.floorY + hall.ceiling;
+  for (const w of out.windows) {
+    assert.ok(Math.abs(w.h - 0.3 * hall.ceiling) < 1e-9, `fallback window ${w.h.toFixed(2)} m tall in a ${hall.ceiling} m hall`);
+    assert.ok(Math.abs(w.c[1] - (top - 0.75 - w.h / 2)) < 1e-9, 'fallback window not 0.75 m below the ceiling');
+  }
+});
+
+test('no shaft lands on a colossus, and none is aimed at one (M1)', () => {
+  let halls = 0, shafts = 0, aimed = 0;
+  for (let x = -20; x < 20; x++) for (let z = -20; z < 20; z++) {
+    const hall = hallParams(seed, x, 0, z, fields), conns = connsFor(seed, hall, fields), built = buildHall(hall, conns);
+    const statues = placeStatues(seed, hall, built.slots, built.boxes);
+    const giant = placeColossus(seed, hall, built.boxes, statues);
+    if (!giant) continue;
+    statues.push(giant);
+    const out = windowsFor(seed, hall, conns, statues);
+    if (!out.wall) continue;
+    halls++;
+    const x0 = Math.min(...giant.boxes.map(b => b.min[0])), x1 = Math.max(...giant.boxes.map(b => b.max[0]));
+    const z0 = Math.min(...giant.boxes.map(b => b.min[2])), z1 = Math.max(...giant.boxes.map(b => b.max[2]));
+    const inside = ([px, pz]) => px > x0 && px < x1 && pz > z0 && pz < z1;
+    for (const s of out.shafts) {
+      shafts++;
+      assert.ok(!inside([s.to[0], s.to[2]]), `shaft lands inside the colossus at (${x},${z})`);
+      assert.ok(!(Math.abs(s.to[0] - giant.slot.x) < 1e-9 && Math.abs(s.to[2] - giant.slot.z) < 1e-9), `shaft aimed at the colossus at (${x},${z})`);
+      const onStatue = statues.some(st => !st.colossus && Math.abs(st.slot.x - s.to[0]) < 1e-9 && Math.abs(st.slot.z - s.to[2]) < 1e-9);
+      if (!onStatue) continue;
+      aimed++;
+      // An aimed shaft's ground path, from below its window to its statue, never crosses the colossus.
+      for (let t = 0; t <= 1; t += 0.01) {
+        assert.ok(!inside([s.from[0] + (s.to[0] - s.from[0]) * t, s.from[2] + (s.to[2] - s.from[2]) * t]), `aimed shaft crosses the colossus at (${x},${z})`);
+      }
+    }
+  }
+  assert.ok(halls >= 50 && shafts >= 100, `only ${halls} colossus halls, ${shafts} shafts`);
+  assert.ok(aimed >= 5, `only ${aimed} aimed shafts in colossus halls`);
 });

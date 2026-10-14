@@ -4,6 +4,7 @@ import { stream } from './rng.js';
 import { pointInPolygon } from './hall.js';
 import { footprint } from './shapes/footprint.js';
 import { WELL } from './shapes/stairwell.js';
+import { isRoofless, overheadKey } from './roof.js';
 
 const DEG = Math.PI / 180;
 const COUNT = { luminous: [2, 4], dusk: [1, 2], chiaroscuro: [1, 2] };
@@ -66,25 +67,29 @@ const cross2 = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0
 const segsCross = (p, q, r, s) => cross2(p, q, r) * cross2(p, q, s) < -1e-12 && cross2(r, s, p) * cross2(r, s, q) < -1e-12;
 
 // Does the landing patch (a square of half-size `half` at (x, z), axes u and its perpendicular)
-// lie inside the footprint and clear of the stairwell hole?
-function patchFits(poly, well, x, z, u, half) {
+// lie inside the footprint and clear of every hole (the stairwell, a colossus's footprint)? Each
+// hole is an axis-aligned rectangle, corners in the order [x0 z0], [x1 z0], [x1 z1], [x0 z1].
+function patchFits(poly, holes, x, z, u, half) {
   const p = [-u[1], u[0]];
   const sq = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + (u[0] * a + p[0] * b) * half, z + (u[1] * a + p[1] * b) * half]);
   const inSq = ([vx, vz]) => Math.abs((vx - x) * u[0] + (vz - z) * u[1]) < half && Math.abs((vx - x) * p[0] + (vz - z) * p[1]) < half;
   const edgesCross = (q) => q.some((a, i) => sq.some((c, j) => segsCross(a, q[(i + 1) % q.length], c, sq[(j + 1) % 4])));
   if (!sq.every(c => pointInPolygon(c, poly)) || poly.some(inSq) || edgesCross(poly)) return false;
-  if (!well) return true;
-  const inWell = ([vx, vz]) => vx > well[0][0] && vx < well[2][0] && vz > well[0][1] && vz < well[2][1];
-  return !(sq.some(inWell) || well.some(inSq) || edgesCross(well) || inWell([x, z]));
+  return holes.every(hole => {
+    const inHole = ([vx, vz]) => vx > hole[0][0] && vx < hole[2][0] && vz > hole[0][1] && vz < hole[2][1];
+    return !(sq.some(inHole) || hole.some(inSq) || edgesCross(hole) || inHole([x, z]));
+  });
 }
 
 // The widest shaft, up to `w`, whose landing patch at (x, z) fits: shrinks by a fifth and retries; no draws.
-function fitWidth(poly, well, x, z, u, w) {
-  while (w > 1e-3 && !patchFits(poly, well, x, z, u, PATCH * w)) w *= 0.8;
+function fitWidth(poly, holes, x, z, u, w) {
+  while (w > 1e-3 && !patchFits(poly, holes, x, z, u, PATCH * w)) w *= 0.8;
   return w;
 }
 
 export function windowsFor(seedHash, hall, conns, statues) {
+  // Open to the sky: no window wall, no windows, no shafts, and the key light from nearly overhead.
+  if (isRoofless(seedHash, hall)) return { wall: null, keyDir: overheadKey(seedHash, hall), windows: [], shafts: [] };
   const rng = stream(seedHash, hall.x, hall.y, hall.z, 'windows');
   const edges = footprintEdges(hall, conns), poly = footprint(hall);
   // Doorless walls first; otherwise a wall with room for a window beside its doorway.
@@ -134,17 +139,28 @@ export function windowsFor(seedHash, hall, conns, statues) {
   const well = hall.isStair
     ? [[hall.cx - WELL.hx, hall.cz - WELL.hz], [hall.cx + WELL.hx, hall.cz - WELL.hz], [hall.cx + WELL.hx, hall.cz + WELL.hz], [hall.cx - WELL.hx, hall.cz + WELL.hz]]
     : null;
+  // A colossus is never aimed at (M1): its footprint, the bounding rectangle of its boxes, is a hole
+  // like the well, which landing patches keep off and aimed shafts' ground paths never cross.
+  const targets = statues.filter(st => !st.colossus);
+  const bulks = statues.filter(st => st.colossus).map(st => {
+    const x0 = Math.min(...st.boxes.map(b => b.min[0])), x1 = Math.max(...st.boxes.map(b => b.max[0]));
+    const z0 = Math.min(...st.boxes.map(b => b.min[2])), z1 = Math.max(...st.boxes.map(b => b.max[2]));
+    return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+  });
+  const holes = well ? [well, ...bulks] : bulks;
   // First pass: where each shaft would land. Aimed shafts land on their statue; the rest go along
   // the key light, as far as the nominal elevation takes them but short of the walls and the
   // stairwell, and pulled back until the landing patch fits.
   const plans = windows.map(win => {
     const [wx, wy, wz] = win.c, height = wy - hall.floorY;
-    if (band === 'chiaroscuro' && statues.length) {
-      // Aim at the statue most nearly in front of the window, if any is in front at all.
-      const scored = statues.map(st => {
+    if (band === 'chiaroscuro' && targets.length) {
+      // Aim at the statue most nearly in front of the window, if any is in front at all and no
+      // colossus stands between.
+      const scored = targets.map(st => {
         const dx = st.slot.x - wx, dz = st.slot.z - wz, dist = Math.hypot(dx, dz);
         return { st, dist, dot: dist > 1e-6 ? (dx * kn[0] + dz * kn[1]) / dist : -1 };
-      }).filter(o => o.dot > 0.3 && o.dist > 1.5).sort((p, q) => q.dot - p.dot || p.dist - q.dist);
+      }).filter(o => o.dot > 0.3 && o.dist > 1.5)
+        .filter(o => bulks.every(b => reach(b, wx, wz, (o.st.slot.x - wx) / o.dist, (o.st.slot.z - wz) / o.dist) >= o.dist)).sort((p, q) => q.dot - p.dot || p.dist - q.dist);
       if (scored.length) {
         const o = scored[0];
         return { win, height, aimed: true, dir: [(o.st.slot.x - wx) / o.dist, (o.st.slot.z - wz) / o.dist], land: [o.st.slot.x, o.st.slot.z] };
@@ -155,19 +171,27 @@ export function windowsFor(seedHash, hall, conns, statues) {
     let dist = Math.min(nominal, Math.max(0.5, ahead - 0.5));
     const full = PATCH * win.w;
     for (let d = dist; d >= 0.5; d -= 0.25) {
-      if (patchFits(poly, well, wx + kn[0] * d, wz + kn[1] * d, kn, full)) { dist = d; break; }
+      if (patchFits(poly, holes, wx + kn[0] * d, wz + kn[1] * d, kn, full)) { dist = d; break; }
     }
     return { win, height, aimed: false, dir: kn, dist };
   });
   // The landing rule wins over the nominal elevation: the key light takes the steepest keyed
   // shaft's elevation, and every keyed shaft is brought to it, so light and shafts agree.
   const keyed = plans.filter(p => !p.aimed);
-  const elev = keyed.length ? Math.max(...keyed.map(p => Math.atan2(p.height, p.dist))) : elev0;
+  let elev = keyed.length ? Math.max(...keyed.map(p => Math.atan2(p.height, p.dist))) : elev0;
+  // M1: brought to that elevation, a keyed shaft that landed past a colossus can come down short,
+  // on the colossus itself. Only then is the whole key steepened, half a degree at a time, until
+  // every keyed landing clears the colossus by half its patch. Without a colossus this never runs.
+  const onBulk = (p, e) => {
+    const d = p.height / Math.tan(e), x = p.win.c[0] + p.dir[0] * d, z = p.win.c[2] + p.dir[1] * d, m = PATCH * p.win.w / 2;
+    return bulks.some(b => x > b[0][0] - m && x < b[2][0] + m && z > b[0][1] - m && z < b[2][1] + m);
+  };
+  while (elev < 89 * DEG && keyed.some(p => onBulk(p, elev))) elev = Math.min(89 * DEG, elev + 0.5 * DEG);
   const keyDir = [kn[0] * Math.cos(elev), -Math.sin(elev), kn[1] * Math.cos(elev)];
   const shafts = plans.map(p => {
     const [wx, wy, wz] = p.win.c, dist = p.height / Math.tan(elev);
     const [tx, tz] = p.aimed ? p.land : [wx + p.dir[0] * dist, wz + p.dir[1] * dist];
-    const w = fitWidth(poly, well, tx, tz, p.dir, p.win.w);
+    const w = fitWidth(poly, holes, tx, tz, p.dir, p.win.w);
     return { from: [wx, wy, wz], to: [tx, hall.floorY, tz], w, strength: STRENGTH[band] };
   });
   return { wall, keyDir, windows: windows.map(({ s, ...w }) => w), shafts };

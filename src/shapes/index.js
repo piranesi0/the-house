@@ -11,6 +11,9 @@ import { STOREY } from '../hall.js';
 export const BUILDERS = { long: buildRect, square: buildRect, octagon: buildOctagon, cross: buildCross, colonnade: buildColonnade };
 
 export function buildHall(hall, conns, opts = {}) {
+  // A roofless hall is built like one seen from below: no ceiling poly and no ceiling outline. Its
+  // walls keep their full height, so their own box edges are the line along the top.
+  if (opts.roofless) opts = { ...opts, ceiling: false };
   // A hall seen from a stairwell above stops short of the floor it is seen through.
   if (opts.vista && hall.y < 0) hall = { ...hall, ceiling: Math.min(hall.ceiling, STOREY - 1) };
   const built = BUILDERS[hall.shape](hall, conns, opts);
