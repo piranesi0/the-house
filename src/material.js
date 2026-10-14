@@ -198,9 +198,7 @@ const PORTAL_FRAG = /* glsl */`
     Mood m = moodFor(uFields);
     // A third of the wall's fog: windows sit 16-26 m from the eye, past a dark hall's fog, and as
     // the hall's light source they must still read through the haze.
-    // The fog target is the wall's own (skyFogTarget), so a far pane dissolves with its wall.
-    float fog = fogAmount(m, vV, vH) / 3.0;
-    gl_FragColor = vec4(mix(skyColour(vDir), skyFogTarget(m.haze, vDir, fog), fog), 1.0);
+    gl_FragColor = vec4(mix(skyColour(vDir), m.haze, fogAmount(m, vV, vH) / 3.0), 1.0);
   }
 `;
 export function portalMaterial({ fields = [0.5, 0, 0] } = {}) {

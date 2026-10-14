@@ -20,15 +20,29 @@ export const SKY_GLSL = /* glsl */`
   }
   // The three light stops, as moodFor: chiaroscuro (night), dusk, luminous (day).
   vec3 skyStops(vec3 a, vec3 b, vec3 c, float l) { return l < 0.5 ? mix(a, b, l * 2.0) : mix(b, c, (l - 0.5) * 2.0); }
-  // Sky colour along a world direction (any length).
+  // The plain sky: zenith to horizon, darkened below the horizon. Ungreyed; l: the eased light.
+  vec3 skyHorizon(float l) { return skyStops(vec3(0.030, 0.035, 0.060), vec3(0.88, 0.56, 0.28), vec3(0.97, 0.94, 0.86), l); }
+  vec3 skyBase(vec3 d, float l) {
+    vec3 zenith = skyStops(vec3(0.010, 0.012, 0.025), vec3(0.08, 0.13, 0.32), vec3(0.60, 0.72, 0.86), l);
+    vec3 horizon = skyHorizon(l);
+    vec3 col = mix(zenith, horizon, pow(1.0 - smoothstep(0.0, 0.3, max(d.y, 0.0)), 1.5));
+    return mix(col, horizon * 0.6, smoothstep(0.0, 0.25, -d.y));          // below the horizon
+  }
+  // Water pales and greys the sky; decay dulls it.
+  vec3 skyGrey(vec3 col) {
+    float w = clamp(uSkyFields.y, 0.0, 1.0), dc = clamp(uSkyFields.z, 0.0, 1.0);
+    return mix(col, vec3(dot(col, vec3(0.3, 0.59, 0.11))), 0.35 * w + 0.25 * dc);
+  }
+  // The sky's gradient alone along a world direction (any length): no sun, clouds or stars. The
+  // fog target uses it, so a fogged ceiling never shows a disc or a star.
+  vec3 skyGradient(vec3 dir) { return skyGrey(skyBase(normalize(dir), clamp(uSkyFields.x, 0.0, 1.0))); }
+  // Sky colour along a world direction (any length): the gradient plus sun, clouds and stars.
   vec3 skyColour(vec3 dir) {
     vec3 d = normalize(dir);
-    float l = clamp(uSkyFields.x, 0.0, 1.0), w = clamp(uSkyFields.y, 0.0, 1.0), dc = clamp(uSkyFields.z, 0.0, 1.0);
+    float l = clamp(uSkyFields.x, 0.0, 1.0);
     float up = d.y;
-    vec3 zenith = skyStops(vec3(0.010, 0.012, 0.025), vec3(0.08, 0.13, 0.32), vec3(0.60, 0.72, 0.86), l);
-    vec3 horizon = skyStops(vec3(0.030, 0.035, 0.060), vec3(0.88, 0.56, 0.28), vec3(0.97, 0.94, 0.86), l);
-    vec3 col = mix(zenith, horizon, pow(1.0 - smoothstep(0.0, 0.3, max(up, 0.0)), 1.5));
-    col = mix(col, horizon * 0.6, smoothstep(0.0, 0.25, -up));          // below the horizon
+    vec3 horizon = skyHorizon(l);
+    vec3 col = skyBase(d, l);
     // Sun by day and dusk, moon by night: a small disc and a broad glow toward uSunDir.
     float s = max(dot(d, normalize(uSunDir)), 0.0);
     vec3 sunCol = skyStops(vec3(0.55, 0.60, 0.75), vec3(1.0, 0.70, 0.40), vec3(1.0, 0.96, 0.86), l);
@@ -41,15 +55,16 @@ export const SKY_GLSL = /* glsl */`
     vec3 sc = d * 160.0;
     float star = step(0.996, skyHash(floor(sc))) * (1.0 - smoothstep(0.0, 0.35, length(fract(sc) - 0.5)));
     col += vec3(star) * (1.0 - smoothstep(0.1, 0.35, l)) * smoothstep(0.0, 0.1, up);
-    // Water pales and greys the sky; decay dulls it.
-    return mix(col, vec3(dot(col, vec3(0.3, 0.59, 0.11))), 0.35 * w + 0.25 * dc);
-  }  // What fog fades toward along a world-oriented view ray (final review S2 I1): the hall's haze at
-  // and below the horizon, the dome's own sky by 0.12 up, the dome's horizon rule. Fully fogged
-  // geometry seen above the horizon then dissolves into the sky behind it instead of standing as a
-  // haze-coloured slab. f: the fog amount; the sky is only computed where it can show.
+    return skyGrey(col);
+  }
+  // What fog fades toward along a world-oriented view ray (final review S2 I1): the hall's haze at
+  // and below the horizon, the sky's gradient by 0.12 up (the dome's horizon rule), and only for
+  // near-fully fogged geometry (f from 0.7 to 1). Geometry that has all but vanished above the
+  // horizon then dissolves into the sky behind it instead of standing as a haze-coloured slab,
+  // while a partly fogged ceiling keeps the haze. f: the fog amount.
   vec3 skyFogTarget(vec3 haze, vec3 dir, float f) {
-    float k = smoothstep(0.0, 0.12, normalize(dir).y);
-    return f > 0.0 && k > 0.0 ? mix(haze, skyColour(dir), k) : haze;
+    float k = smoothstep(0.0, 0.12, normalize(dir).y) * smoothstep(0.7, 1.0, f);
+    return k > 0.0 ? mix(haze, skyGradient(dir), k) : haze;
   }
 `;
 
