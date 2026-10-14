@@ -5,7 +5,7 @@ import { makeFields } from './fields.js';
 import { cellOf, freeSpawn } from './hall.js';
 import { World } from './world.js';
 import { Water } from './water.js';
-import { Clouds } from './sky.js';
+import { Clouds, ShadedClouds } from './sky.js';
 import { Flocks } from './birds.js';
 import { Sound } from './audio.js';
 import { Player } from './player.js';
@@ -26,13 +26,13 @@ document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
 const water = new Water(scene, renderer, frag.look);
-// The old wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
-// haze-coloured spheres, so that look has none until its own clouds replace them.
-const clouds = frag.look === 'shaded' ? null : new Clouds(scene, seedHash);
+// v0's wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
+// haze-coloured spheres. The shaded look has its own, soft and translucent, in the same places.
+const clouds = frag.look === 'shaded' ? new ShadedClouds(scene, seedHash) : new Clouds(scene, seedHash);
 const flocks = new Flocks(scene, seedHash);
 const world = new World(scene, seedHash, fields, {
-  onAdd: (c) => { water.add(c); clouds?.add(c); flocks.add(c); },
-  onRemove: (c) => { water.remove(c); clouds?.remove(c); flocks.remove(c); },
+  onAdd: (c) => { water.add(c); clouds.add(c); flocks.add(c); },
+  onRemove: (c) => { water.remove(c); clouds.remove(c); flocks.remove(c); },
 }, frag.look);
 const player = new Player(camera, renderer.domElement);
 const debug = frag.debug ? new Debug(renderer) : null;
@@ -101,7 +101,7 @@ renderer.setAnimationLoop((t) => {
   if (here.depth > 0 && t / 1000 > nextDrip) { sound.drip(); nextDrip = t / 1000 + 3 + Math.random() * 5; }
   flocks.focus = [cx, cz];
   water.update(t / 1000);
-  clouds?.update(dt);
+  clouds.update(dt);
   flocks.update(t / 1000, dt);
   renderer.render(scene, camera);
   debug?.update(world);
