@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { polyPositions } from './shapes/poly.js';
-import { KIND } from './material.js';
+import { KIND, mirrorLineMaterial } from './material.js';
 import { CELL } from './hall.js';
 import { isInlaid } from './marble.js';
 import { edgeProgram, fits, runEdges, cylinderPositions, boxPositions, spherePositions, unindex } from './creases.js';
@@ -175,7 +175,13 @@ export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = n
   const group = new THREE.Group();
   if (prims.length === 0) return group;
   const reflected = mirror ? mirror.prims : [];
-  const lineGeoms = [...prims.map(primGeometry), ...reflected.map(p => mirroredLines(p, mirror))].filter(Boolean);
+  const lineGeoms = prims.map(primGeometry).filter(Boolean);
+  if (mirror) {
+    // Which lines are mirrored, for the line material's pool test (mirrorLineMaterial).
+    const mark = (g, v) => g.setAttribute('mirror', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1));
+    lineGeoms.forEach(g => mark(g, 0));
+    for (const p of reflected) { const g = mirroredLines(p, mirror); if (g) lineGeoms.push(mark(g, 1)); }
+  }
   if (lineGeoms.length) {
     const merged = mergeGeometries(lineGeoms, false);
     lineGeoms.forEach(g => g.dispose());
@@ -184,7 +190,7 @@ export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = n
       gm.renderOrder = -1;
       group.add(gm);
     }
-    group.add(new THREE.LineSegments(merged, new THREE.LineBasicMaterial({ color })));
+    group.add(new THREE.LineSegments(merged, mirror && surface ? mirrorLineMaterial(color, surface.material) : new THREE.LineBasicMaterial({ color })));
   }
   if (surface) {
     const solids = [];

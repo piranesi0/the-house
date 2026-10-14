@@ -91,13 +91,14 @@ test('mirrorSegments, about the floor and cut there, drops what would rise above
   assert.deepEqual(m, [0, -2, 0, 0, -3, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, -0.5, 0]);
 });
 
-test('nothing in a shaded pool hall mirrors above its floor', () => {
+test('a shaded pool hall mirrors down to minus its own height and nothing above its floor', () => {
   let n = 0;
   for (let i = 0; i < 600; i++) {
     const w = wetHall((i * 31) % 201 - 100, (i * 17) % 201 - 100);
     if (!w) continue;
     const { hall } = w;
     const local = translatePrims(reflectionPrims(hall, w.statues, w.own, { shaded: true }), -hall.cx, -hall.floorY, -hall.cz);
+    let lowest = Infinity;
     for (const p of local) {
       let tri;
       if (p.kind === 'poly') tri = polyPositions(p);
@@ -107,9 +108,17 @@ test('nothing in a shaded pool hall mirrors above its floor', () => {
         tri = [0, 1, 2, 4, 5, 6, 3, 7, 1, 2, 6, 7].flatMap(k => c(k));
       }
       const m = mirrorTriangles(tri, MIRROR_Y);
-      for (let k = 1; k < m.length; k += 3) assert.ok(m[k] <= 1e-6, `${hall.shape} ${p.kind} ${p.name ?? ''} mirrored to ${m[k]} above the floor`);
+      for (let k = 1; k < m.length; k += 3) {
+        assert.ok(m[k] <= 1e-6, `${hall.shape} ${p.kind} ${p.name ?? ''} mirrored to ${m[k]} above the floor`);
+        lowest = Math.min(lowest, m[k]);
+      }
+      // The vault hangs exactly as far below the floor as it stands above it.
+      if (p.kind === 'poly') for (let k = 1; k < m.length; k += 3) assert.ok(Math.abs(m[k] + hall.ceiling) < 1e-4, `vault mirrored to ${m[k]}, not ${-hall.ceiling}`);
       n++;
     }
+    // The walls carry the mirror at least a ceiling's height down, no deeper than the tallest part.
+    const tallest = Math.max(...local.map(p => boundsOf([p]).max[1]));
+    assert.ok(lowest <= -hall.ceiling + 1e-4 && Math.abs(lowest + tallest) < 1e-4, `${hall.shape} mirror bottoms at ${lowest}, ceiling ${hall.ceiling}`);
     const segs = local.filter(p => p.kind !== 'poly').flatMap(p => { const { min, max } = boundsOf([p]); return [...min, ...max]; });
     assert.ok(mirrorSegments(segs, MIRROR_Y, MIRROR_Y).every((v, j) => j % 3 !== 1 || v <= 1e-6), 'a mirrored line above the floor');
   }
