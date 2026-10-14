@@ -6,7 +6,10 @@ import { STOPS, WATER, DECAY } from './mood.js';
 import { SKY_GLSL, SKY_UNIFORMS } from './skydome.js';
 import { MARBLES, PATTERNS, MAX_FOOTPRINT } from './marble.js';
 
-export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3 };
+// mirrored: added to a part's own kind when it hangs in a pool's mirror (build.js).
+export const KIND = { arch: 0, statue: 1, pool: 2, floor: 3, mirrored: 10 };
+// A mirrored part is this bright against its original.
+export const MIRROR_DIM = 0.6;
 
 const v3 = (a) => new THREE.Vector3(...a);
 const stopUniforms = () => ({
@@ -224,21 +227,33 @@ const SURFACE_FRAG = /* glsl */`
   ${MARBLE_GLSL}
   uniform vec3 uKeyDir;        // direction the light travels, normalised
   uniform float uCeiling, uDim;
+  uniform float uDepth, uSheet;   // the pool's water line and water sheet, above the hall floor
   varying vec3 vN, vNV, vV, vFields, vP;
   varying float vH, vKind;
   #include <clipping_planes_pars_fragment>
   void main() {
     #include <clipping_planes_fragment>
     Mood m = moodFor(vFields);
+    // A pool's mirror (KIND.mirrored + the part's own kind, build.js) hangs below the water line:
+    // its vertices are the originals turned over about it. It is shaded as the original part (the
+    // height above the floor, the marble's coordinates and the normal turned back for the light, so
+    // a statue's underside stays dark and the reflected vault takes the bounce), dimmer, and only
+    // below the water sheet: parts standing in the water would otherwise mirror up out of it.
+    float mirrored = step(${KIND.mirrored - 0.5}, vKind), kd = vKind - ${KIND.mirrored}.0 * mirrored;
     // Double-sided: a floor or ramp seen from below is lit as its underside.
     float facing = gl_FrontFacing ? 1.0 : -1.0;
     vec3 n = normalize(vN) * facing;
-    float h = vH;
+    n.y *= 1.0 - 2.0 * mirrored;
+    float h = mix(vH, 2.0 * uDepth - vH, mirrored);
+    vec3 p = vec3(vP.x, mix(vP.y, 2.0 * uDepth - vP.y, mirrored), vP.z);
     // Bounded kind tests, so a later kind cannot be mistaken for a pool.
-    float isStatue = step(0.5, vKind) * step(vKind, 1.5), isPool = step(1.5, vKind) * step(vKind, 2.5);
-    float isFloor = step(2.5, vKind) * step(vKind, 3.5);
-    // Taken here, in uniform control flow, for the filters behind the early-outs below.
+    float isStatue = step(0.5, kd) * step(kd, 1.5), isPool = step(1.5, kd) * step(kd, 2.5);
+    float isFloor = step(2.5, kd) * step(kd, 3.5);
+    // Taken here, in uniform control flow, for the filters behind the early-outs below; for a mirrored
+    // part the derivatives of p, which runs y the other way.
     mDx = dFdx(vP); mDy = dFdy(vP);
+    mDx.y *= 1.0 - 2.0 * mirrored; mDy.y *= 1.0 - 2.0 * mirrored;
+    if (mirrored > 0.5 && vH > uSheet) discard;
     // Veins calm between 10 and 15 m of the flattened distance the fog uses (horizontal plus a third
     // of the vertical, turned to world orientation by the view rotation), so vaults overhead keep
     // theirs; fainter on statues. Past 15 m they are skipped.
@@ -246,10 +261,10 @@ const SURFACE_FRAG = /* glsl */`
     float flatDist = length(off.xz) + abs(off.y) / 3.0;
     float near = 1.0 - smoothstep(10.0, 15.0, flatDist);
     float vein = 0.0;
-    if (near > 0.0) vein = marbleVeins(vP) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
+    if (near > 0.0) vein = marbleVeins(p) * uVeinStrength * near * mix(1.0, 0.35, isStatue);
     // Floors are inlaid, out to fogFar, where the distance fog is total and hides them.
     vec3 marble = uMarbleBase;
-    if (isFloor > 0.5 && flatDist < m.fogFar) marble = inlay(vP.xz);
+    if (isFloor > 0.5 && flatDist < m.fogFar) marble = inlay(p.xz);
     vec3 stone = m.stone * mix(mix(vec3(1.0), marble, mix(${MARBLE_WEIGHT}, ${INLAY_WEIGHT}, isFloor)), mix(vec3(1.0), uMarbleVein, ${VEIN_WEIGHT}), vein);
     stone *= 1.0 + 0.12 * isStatue;   // statues a touch lighter
     stone *= 1.0 - 0.25 * isPool;     // pool floors darker
@@ -260,7 +275,7 @@ const SURFACE_FRAG = /* glsl */`
     vec3 color = stone * (hemi + key) * grad * contact;
     float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * isPool;
     color += m.sky * sheen;
-    color *= uDim;
+    color *= uDim * mix(1.0, ${MIRROR_DIM.toFixed(2)}, mirrored);
     // Fog toward the haze level, toward the sky above the horizon (skyFogTarget, skydome.js).
     float fog = fogAmount(m, vV, h);
     color = mix(color, skyFogTarget(m.haze, (vec4(vV, 0.0) * viewMatrix).xyz, fog), fog);
@@ -268,8 +283,9 @@ const SURFACE_FRAG = /* glsl */`
   }
 `;
 
-// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z.
-export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [] } = {}) {
+// marble: a MARBLES entry; pattern: one of PATTERNS; footprint: footprintLocal(hall), flat x, z;
+// depth, sheet: the hall's water line and water sheet above its floor (a pool hall's mirror).
+export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1, marble = MARBLES.carrara, pattern = 'chequer', footprint = [], depth = 0, sheet = 0 } = {}) {
   const n = footprint.length / 2;
   const foot = Array.from({ length: MAX_FOOTPRINT }, (_, i) => new THREE.Vector2(footprint[2 * i] ?? 0, footprint[2 * i + 1] ?? 0));
   // Inscribed radius: the least distance from the hall centre to any footprint edge, so the medallion
@@ -286,7 +302,7 @@ export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim },
       uMarbleBase: { value: v3(marble.base) }, uMarbleVein: { value: v3(marble.vein) }, uVeinStrength: { value: marble.strength },
       uInlayA: { value: v3(marble.inlay[0]) }, uInlayB: { value: v3(marble.inlay[1]) }, uPattern: { value: PATTERNS.indexOf(pattern) },
-      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR } },
+      uFoot: { value: foot }, uFootN: { value: n }, uMedR: { value: medR }, uDepth: { value: depth }, uSheet: { value: sheet } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
@@ -376,5 +392,57 @@ export function portalMaterial({ fields = [0.5, 0, 0] } = {}) {
     vertexShader: PORTAL_VERT, fragmentShader: PORTAL_FRAG,
     uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uFields: { value: v3(fields) } },
     side: THREE.DoubleSide, clipping: true,
+  });
+}
+
+// The pools' water: one mesh holds every loaded pool's sheet (water.js), each a translucent sheet
+// over the opening in its floor (shaded look), tinted from haze and sky, brighter and milkier at
+// grazing angles (a fake Fresnel term), its opacity capped at WATER_ALPHA so the mirror below always
+// shows (look spec §6). It also draws v0's 1 m grid in the pool's line colour, rippling with uTime
+// (v0 moved the grid's lines up and down; seen from above a ripple across them reads the same), so
+// all the pools in view cost one draw call. Per vertex: fields (the pool hall's centre [light,
+// water, decay]), h (the sheet's height above its hall floor, for the height fog) and grid (the
+// line colour, raw sRGB). Positions are relative to the mesh's own origin, a hall centre on the
+// 24 m grid, so the whole metres of the grid fall where v0's did. View space like the surfaces. The
+// eye is always above the water, so the fog target is the haze (skyFogTarget below the horizon).
+export const WATER_ALPHA = 0.6;
+const WATER_VERT = /* glsl */`
+  attribute vec3 fields, grid;
+  attribute float h;
+  varying vec3 vV, vNV, vFields, vGrid;
+  varying vec2 vXZ;
+  varying float vH;
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vV = mvPosition.xyz; vNV = normalize(normalMatrix * normal); vXZ = position.xz;
+    vFields = fields; vGrid = grid; vH = h;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+const WATER_FRAG = /* glsl */`
+  precision highp float;
+  ${MOOD_GLSL}
+  uniform float uTime;
+  varying vec3 vV, vNV, vFields, vGrid;
+  varying vec2 vXZ;
+  varying float vH;
+  void main() {
+    Mood m = moodFor(vFields);
+    float fresnel = pow(1.0 - max(dot(normalize(vNV), normalize(-vV)), 0.0), 3.0);
+    vec3 tint = mix(m.haze * 0.8, m.sky, 0.35 + 0.5 * fresnel);
+    float a = min(${WATER_ALPHA.toFixed(2)}, 0.18 + 0.6 * fresnel);
+    // One-pixel lines on the whole metres, faded out where a cell is under about four pixels.
+    vec2 q = vXZ + vec2(0.03 * sin(0.7 * uTime + 0.5 * vXZ.y), 0.02 * sin(0.5 * uTime + 0.7 * vXZ.x));
+    vec2 w = fwidth(q), d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4));
+    float line = (1.0 - min(min(d.x, d.y), 1.0)) * (1.0 - smoothstep(0.15, 0.4, max(w.x, w.y)));
+    vec3 colour = mix(tint, vGrid, line);
+    gl_FragColor = vec4(mix(colour, m.haze, fogAmount(m, vV, vH)), max(a, line));
+  }
+`;
+export function waterMaterial() {
+  return new THREE.ShaderMaterial({
+    vertexShader: WATER_VERT, fragmentShader: WATER_FRAG,
+    uniforms: { ...stopUniforms(), uTime: { value: 0 } },
+    transparent: true, depthWrite: false,
   });
 }

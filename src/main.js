@@ -25,7 +25,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
-const water = new Water(scene, renderer);
+const water = new Water(scene, renderer, frag.look);
 // The old wire-sphere clouds are look=lines only: over the shaded look's sky dome they draw as
 // haze-coloured spheres, so that look has none until its own clouds replace them.
 const clouds = frag.look === 'shaded' ? null : new Clouds(scene, seedHash);

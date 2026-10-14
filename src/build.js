@@ -5,6 +5,7 @@ import { KIND } from './material.js';
 import { CELL } from './hall.js';
 import { isInlaid } from './marble.js';
 import { edgeProgram, fits, runEdges, cylinderPositions, boxPositions, spherePositions, unindex } from './creases.js';
+import { mirrorTriangles, mirrorSegments } from './reflect.js';
 
 // Box, cylinder and sphere parts share one template per kind (creases.js): the reference part's
 // index buffer and EdgesGeometry program, built once. A part's own positions come from the same
@@ -148,12 +149,33 @@ function addFieldAttributes(g, kind, fields, offset) {
   g.setAttribute('kind', new THREE.BufferAttribute(k, 1));
 }
 
+// A pool's mirror in the hall's own meshes: each part's lines and solid turned over about the water
+// line (reflect.js), the lines cut at the sheet (the solids are cut in the shader). No draw call of
+// its own. mirror = { prims, depth, sheet }, hall-relative like the hall's prims.
+function mirroredLines(p, { depth, sheet }) {
+  const g = primGeometry(p);
+  if (!g) return null;
+  const pos = mirrorSegments(g.attributes.position.array, depth, sheet);
+  g.dispose();
+  return pos.length ? geometryOf(pos) : null;
+}
+function mirroredSolid(p, { depth }) {
+  const g = primSolid(p);
+  if (!g) return null;
+  const m = geometryOf(mirrorTriangles(g.attributes.position.array, depth));
+  g.dispose();
+  m.computeVertexNormals();
+  return m;
+}
+
 // A group of line meshes (and optionally a ghost pass) for a primitive list; with `surface`, also
-// one solid mesh named 'surface'. surface = { material, fields, offset: [cx, floorY, cz] }.
-export function buildGroup(prims, { color, ghost = 0, surface = null } = {}) {
+// one solid mesh named 'surface'. surface = { material, fields, offset: [cx, floorY, cz] }. With
+// `mirror` (shaded pool halls), the pool's reflection joins both: see mirroredLines above.
+export function buildGroup(prims, { color, ghost = 0, surface = null, mirror = null } = {}) {
   const group = new THREE.Group();
   if (prims.length === 0) return group;
-  const lineGeoms = prims.map(primGeometry).filter(Boolean);
+  const reflected = mirror ? mirror.prims : [];
+  const lineGeoms = [...prims.map(primGeometry), ...reflected.map(p => mirroredLines(p, mirror))].filter(Boolean);
   if (lineGeoms.length) {
     const merged = mergeGeometries(lineGeoms, false);
     lineGeoms.forEach(g => g.dispose());
@@ -170,6 +192,12 @@ export function buildGroup(prims, { color, ghost = 0, surface = null } = {}) {
       const g = primSolid(p);
       if (!g) continue;
       addFieldAttributes(g, kindOf(p), surface.fields, surface.offset);
+      solids.push(g);
+    }
+    for (const p of reflected) {
+      const g = mirroredSolid(p, mirror);
+      if (!g) continue;
+      addFieldAttributes(g, kindOf(p) + KIND.mirrored, surface.fields, surface.offset);
       solids.push(g);
     }
     if (solids.length) {

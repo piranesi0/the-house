@@ -122,5 +122,5 @@ export function octagonSlab(cx, y, cz, ap) {
 }
 
 export function column(x, y0, z, r, h) {
-  return { prim: cyl(r, r, h, [x, y0 + h / 2, z]), box: { min: [x - r, y0, z - r], max: [x + r, y0 + h, z + r] } };
+  return { prim: cyl(r, r, h, [x, y0 + h / 2, z], [0, 0, 0], 12, 'column'), box: { min: [x - r, y0, z - r], max: [x + r, y0 + h, z + r] } };
 }
