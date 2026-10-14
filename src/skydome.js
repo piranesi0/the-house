@@ -43,6 +43,13 @@ export const SKY_GLSL = /* glsl */`
     col += vec3(star) * (1.0 - smoothstep(0.1, 0.35, l)) * smoothstep(0.0, 0.1, up);
     // Water pales and greys the sky; decay dulls it.
     return mix(col, vec3(dot(col, vec3(0.3, 0.59, 0.11))), 0.35 * w + 0.25 * dc);
+  }  // What fog fades toward along a world-oriented view ray (final review S2 I1): the hall's haze at
+  // and below the horizon, the dome's own sky by 0.12 up, the dome's horizon rule. Fully fogged
+  // geometry seen above the horizon then dissolves into the sky behind it instead of standing as a
+  // haze-coloured slab. f: the fog amount; the sky is only computed where it can show.
+  vec3 skyFogTarget(vec3 haze, vec3 dir, float f) {
+    float k = smoothstep(0.0, 0.12, normalize(dir).y);
+    return f > 0.0 && k > 0.0 ? mix(haze, skyColour(dir), k) : haze;
   }
 `;
 

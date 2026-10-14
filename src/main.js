@@ -1,4 +1,4 @@
-import './fogchunk.js';   // first: patches three's fog chunk before any material compiles
+import { SKY_FOG } from './fogchunk.js';   // first: patches three's fog chunk before any material compiles
 import * as THREE from 'three';
 import { fnv1a } from './rng.js';
 import { makeFields } from './fields.js';
@@ -52,6 +52,9 @@ history.replaceState(null, '', writeFragment({ seed, x: curX, z: curZ, look: fra
 const shaded = frag.look === 'shaded';
 // The sky dome is the shaded look's alone; look=lines keeps the v0 background.
 const dome = shaded ? new SkyDome(scene) : null;
+// Built-in fog (lines, water grid, birds) fades toward the dome's sky above the horizon, like the
+// surfaces; look=lines has no dome and keeps the plain fog colour.
+SKY_FOG.uSkyFog.value = shaded ? 1 : 0;
 let sunK = 1;   // the first frame puts the sun straight where the starting hall's light comes from
 const eased = { light: start.light, water: start.water, decay: start.decay };
 // The surface shader writes mood colours raw (sRGB), so read them as sRGB here, not linear.

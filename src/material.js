@@ -82,6 +82,7 @@ const SURFACE_VERT = /* glsl */`
 const SURFACE_FRAG = /* glsl */`
   precision highp float;
   ${MOOD_GLSL}
+  ${SKY_GLSL}
   uniform vec3 uKeyDir;        // direction the light travels, normalised
   uniform float uCeiling, uDim;
   varying vec3 vN, vNV, vV, vFields;
@@ -104,7 +105,9 @@ const SURFACE_FRAG = /* glsl */`
     float sheen = pow(1.0 - max(dot(normalize(vNV) * facing, -normalize(vV)), 0.0), 3.0) * uWaterSheen * vFields.y * step(1.5, vKind);
     color += m.sky * sheen;
     color *= uDim;
-    color = mix(color, m.haze, fogAmount(m, vV, h));
+    // Fog toward the haze level, toward the sky above the horizon (skyFogTarget, skydome.js).
+    float fog = fogAmount(m, vV, h);
+    color = mix(color, skyFogTarget(m.haze, (vec4(vV, 0.0) * viewMatrix).xyz, fog), fog);
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -112,7 +115,8 @@ const SURFACE_FRAG = /* glsl */`
 export function surfaceMaterial({ keyDir = [-0.5, -0.8, -0.3], ceiling = 8, side = THREE.DoubleSide, dim = 1 } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: SURFACE_VERT, fragmentShader: SURFACE_FRAG,
-    uniforms: { ...stopUniforms(), uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim } },
+    // SKY_UNIFORMS spread, never cloned, as for the portals: the dome's update moves the fog target.
+    uniforms: { ...stopUniforms(), ...SKY_UNIFORMS, uKeyDir: { value: v3(keyDir).normalize() }, uCeiling: { value: ceiling }, uDim: { value: dim } },
     side, clipping: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
   });
 }
@@ -148,7 +152,8 @@ const EFFECTS_FRAG = /* glsl */`
     Mood m = moodFor(uFields);
     // Soft edges across the quad; uv.x runs across a shaft or glow, uv.y along it.
     float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(0.0, 0.35, 1.0 - vUv.x);
-    // vFogK: 1 for shafts and patches, 1/3 for window glows (see effects.js).
+    // vFogK: 1 for shafts and patches, 1/3 for window glows (see effects.js). Additive, so fog fades
+    // them to nothing: they already dissolve into whatever is behind, sky included (S2 I1).
     float a = vAlpha * edge * (1.0 - fogAmount(m, vV, vH) * vFogK);
     // Premultiplied: the material sets premultipliedAlpha, so additive blending is ONE, ONE.
     gl_FragColor = vec4(vTint * a, a);
@@ -193,7 +198,9 @@ const PORTAL_FRAG = /* glsl */`
     Mood m = moodFor(uFields);
     // A third of the wall's fog: windows sit 16-26 m from the eye, past a dark hall's fog, and as
     // the hall's light source they must still read through the haze.
-    gl_FragColor = vec4(mix(skyColour(vDir), m.haze, fogAmount(m, vV, vH) / 3.0), 1.0);
+    // The fog target is the wall's own (skyFogTarget), so a far pane dissolves with its wall.
+    float fog = fogAmount(m, vV, vH) / 3.0;
+    gl_FragColor = vec4(mix(skyColour(vDir), skyFogTarget(m.haze, vDir, fog), fog), 1.0);
   }
 `;
 export function portalMaterial({ fields = [0.5, 0, 0] } = {}) {
