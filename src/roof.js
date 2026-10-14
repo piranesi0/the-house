@@ -1,5 +1,5 @@
-// Roofless halls: about one in ten of the bright halls stands open to the sky (the roll is 0.2;
-// halls beside a stair hall keep their roof, which halves it). Pure, one stream
+// Roofless halls: about one in twelve of the bright halls stands open to the sky (the roll is 0.2;
+// halls beside a stair hall and colonnades keep their roof, which takes it to about 8%). Pure, one stream
 // (salt `roof`), so shapes, windows and the world all ask the same question and get one answer.
 import { stream } from './rng.js';
 import { hallParams } from './hall.js';
@@ -17,11 +17,12 @@ const fieldsFor = (seedHash) => {
 };
 
 // Never a stair hall (its ceiling holds the well's shaft), never a vista hall (y != 0, only seen
-// through a well), and never a hall beside a stair hall, whose vista hall 44 m up would stand over
+// through a well), never a colonnade (its thin columns would rise 18-40 m holding nothing; final
+// review S2 m1), and never a hall beside a stair hall, whose vista hall 44 m up would stand over
 // the open hall's wall (D7). The neighbour check only runs for halls the roll has opened, and
 // draws nothing from the `roof` stream, so the roll and overheadKey's draws are unchanged.
 export function isRoofless(seedHash, hall) {
-  if (hall.y !== 0 || hall.isStair || !(hall.light > ROOF.light)) return false;
+  if (hall.y !== 0 || hall.isStair || hall.shape === 'colonnade' || !(hall.light > ROOF.light)) return false;
   if (!stream(seedHash, hall.x, hall.y, hall.z, 'roof').chance(ROOF.chance)) return false;
   const fields = fieldsFor(seedHash);
   return !NEIGHBOURS.some(([dx, dz]) => hallParams(seedHash, hall.x + dx, 0, hall.z + dz, fields).isStair);

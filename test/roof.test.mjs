@@ -17,6 +17,7 @@ test('about one bright hall in ten is roofless, and no other hall is', () => {
     const hall = hallParams(seed, x, 0, z, fields), r = isRoofless(seed, hall);
     assert.equal(isRoofless(seed, hall), r, 'not deterministic');
     if (hall.isStair || hall.light <= ROOF.light) { assert.equal(r, false, `stair or ${hall.light.toFixed(2)} light hall roofless at (${x},${z})`); continue; }
+    if (hall.shape === 'colonnade') assert.equal(r, false, `colonnade roofless at (${x},${z})`);
     bright++;
     if (r) open++;
   }
